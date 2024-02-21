@@ -243,6 +243,9 @@ public:
                         TxManager->AddLock(lock.GetDataShard(), lock);
                     }
                 }
+                for (const auto& debugInfo : info.GetDebugInfo()) {
+                    DebugInfo.push_back(debugInfo);
+                }
             } else if (data.GetData().template Is<NKikimrKqp::TEvKqpOutputActorResultInfo>()) {
                 NKikimrKqp::TEvKqpOutputActorResultInfo info;
                 YQL_ENSURE(data.GetData().UnpackTo(&info), "Failed to unpack settings");
@@ -265,6 +268,9 @@ public:
                         TxManager->AddAction(lock.GetDataShard(), flags);
                         TxManager->AddLock(lock.GetDataShard(), lock);
                     }
+                }
+                for (const auto& debugInfo : info.GetDebugInfo()) {
+                    DebugInfo.push_back(debugInfo);
                 }
             }
         };
@@ -382,6 +388,16 @@ public:
             if (!TxManager) {
                 BuildLocks(*ResponseEv->Record.MutableResponse()->MutableResult()->MutableLocks(), Locks);
             }
+        }
+
+        if (!DebugInfo.empty()) {
+            auto& response = *ResponseEv->Record.MutableResponse();
+            auto* debugInfos = response.MutableResult()->MutableDebugInfo();
+            debugInfos->Reserve(DebugInfo.size());
+            for (auto& debugInfo : DebugInfo) {
+                debugInfos->Add(std::move(debugInfo));
+            }
+            DebugInfo.clear();
         }
 
         auto resultSize = ResponseEv->GetByteSize();
@@ -1356,6 +1372,10 @@ private:
                 for (auto& lock : res->Record.GetTxLocks()) {
                     LOG_D("Shard " << shardId << " completed, store lock " << lock.ShortDebugString());
                     Locks.emplace_back(std::move(lock));
+                }
+
+                for (const auto& debugInfo : res->Record.GetDebugInfo()) {
+                    DebugInfo.push_back(debugInfo);
                 }
 
                 Counters->TxProxyMon->TxResultComplete->Inc();
@@ -3004,6 +3024,7 @@ private:
     ui64 TxCoordinator = 0;
     THashMap<ui64, TShardState> ShardStates;
     TVector<NKikimrDataEvents::TLock> Locks;
+    TVector<TString> DebugInfo;
     bool ReadOnlyTx = true;
     bool VolatileTx = false;
     bool ImmediateTx = false;

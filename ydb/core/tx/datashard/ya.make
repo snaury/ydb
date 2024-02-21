@@ -245,6 +245,7 @@ PEERDIR(
     library/cpp/digest/md5
     library/cpp/html/pcdata
     library/cpp/json
+    library/cpp/json/writer
     library/cpp/json/yson
     library/cpp/lwtrace
     library/cpp/lwtrace/mon
@@ -311,6 +312,7 @@ RECURSE_FOR_TESTS(
     ut_column_stats
     ut_compaction
     ut_data_cleanup
+    ut_debug_info
     ut_erase_rows
     ut_external_blobs
     ut_followers

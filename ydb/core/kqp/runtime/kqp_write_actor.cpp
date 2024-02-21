@@ -1274,6 +1274,7 @@ private:
         for (const auto& lock : WriteTableActor->GetLocks()) {
             resultInfo.AddLocks()->CopyFrom(lock);
         }
+        // TODO: gather and forward DebugInfo
         resultInfo.SetHasRead(
             GetOperation(Settings.GetType()) == NKikimrDataEvents::TEvWrite::TOperation::OPERATION_INSERT ||
             GetOperation(Settings.GetType()) == NKikimrDataEvents::TEvWrite::TOperation::OPERATION_UPDATE);
