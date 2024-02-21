@@ -251,6 +251,15 @@ private:
             resultInfo.AddLocks()->CopyFrom(lock);
         }
 
+        if (!DebugInfo.empty()) {
+            auto* debugInfos = resultInfo.MutableDebugInfo();
+            debugInfos->Reserve(DebugInfo.size());
+            for (auto& debugInfo : DebugInfo) {
+                debugInfos->Add(std::move(debugInfo));
+            }
+            DebugInfo.clear();
+        }
+
         result.PackFrom(resultInfo);
         return result;
     }
@@ -333,6 +342,10 @@ private:
 
         for (auto& lock : record.GetTxLocks()) {
             Locks.push_back(lock);
+        }
+
+        for (const auto& debugInfo : record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
         }
 
         if (!Snapshot.IsValid()) {
@@ -649,6 +662,7 @@ private:
     NActors::TActorId SchemeCacheRequestTimeoutTimer;
     TVector<NKikimrDataEvents::TLock> Locks;
     TVector<NKikimrDataEvents::TLock> BrokenLocks;
+    TVector<TString> DebugInfo;
     NKqpProto::EStreamLookupStrategy LookupStrategy;
     std::unique_ptr<TKqpStreamLookupWorker> StreamLookupWorker;
     ui64 ReadId = 0;

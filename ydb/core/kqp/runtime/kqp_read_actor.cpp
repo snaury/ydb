@@ -980,6 +980,10 @@ public:
             BrokenLocks.push_back(lock);
         }
 
+        for (const auto& debugInfo : record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         CA_LOG_D("Taken " << Locks.size() << " locks");
         Reads[id].SerializedContinuationToken = record.GetContinuationToken();
 
@@ -1391,6 +1395,16 @@ public:
         for (auto& lock : BrokenLocks) {
             resultInfo.AddLocks()->CopyFrom(lock);
         }
+
+        if (!DebugInfo.empty()) {
+            auto* debugInfos = resultInfo.MutableDebugInfo();
+            debugInfos->Reserve(DebugInfo.size());
+            for (auto& debugInfo : DebugInfo) {
+                debugInfos->Add(std::move(debugInfo));
+            }
+            DebugInfo.clear();
+        }
+
         result.PackFrom(resultInfo);
         return result;
     }
@@ -1446,6 +1460,7 @@ private:
 
     TVector<NKikimrDataEvents::TLock> Locks;
     TVector<NKikimrDataEvents::TLock> BrokenLocks;
+    TVector<TString> DebugInfo;
 
     IKqpGateway::TKqpSnapshot Snapshot;
 
