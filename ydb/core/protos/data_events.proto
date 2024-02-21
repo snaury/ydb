@@ -170,4 +170,8 @@ message TEvWriteResult {
 
     // Commit version when available
     optional NKikimrProto.TRowVersion CommitVersion = 14;
+
+    // Debug info about operation results in json format
+    // Enabled with EnableQueryDebugInfo feature flag
+    repeated string DebugInfo = 1000;
 }

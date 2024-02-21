@@ -432,6 +432,29 @@ EExecutionStatus TExecuteKqpDataTxUnit::Execute(TOperation::TPtr op, TTransactio
         KqpUpdateDataShardStatCounters(DataShard, dataTx->GetCounters());
         auto statsMode = dataTx->GetKqpStatsMode();
         KqpFillStats(DataShard, tasksRunner, computeCtx, statsMode, *op->Result());
+
+        DataShard.MaybeAddDebugInfo(op->Result()->Record, [&](NJsonWriter::TBuf& b) {
+            b.WriteKey("op").WriteString("kqp-tx");
+            b.WriteKey("tx_id").WriteULongLong(txId);
+            if (op->GetStep()) {
+                b.WriteKey("step").WriteULongLong(op->GetStep());
+            }
+            if (op->IsReadOnly()) {
+                b.WriteKey("readonly").WriteBool(true);
+            }
+            if (op->IsMvccSnapshotRead()) {
+                b.WriteKey("snapshot").WriteString(TStringBuilder() << op->GetMvccSnapshot());
+                if (op->IsMvccSnapshotRepeatable()) {
+                    b.WriteKey("snapshot_repeatable").WriteBool(true);
+                }
+            }
+            if (guardLocks.LockTxId) {
+                b.WriteKey("lock_tx_id").WriteULongLong(guardLocks.LockTxId);
+            } else {
+                b.WriteKey("version").WriteString(TStringBuilder() << mvccVersion);
+            }
+        });
+
     } catch (const TMemoryLimitExceededException&) {
         dataTx->ResetCollectedChanges();
 

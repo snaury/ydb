@@ -293,6 +293,8 @@ message TQueryResponse {
     optional TTopicOperationsResponse TopicOperations = 14;
     optional string QueryDiagnostics = 15;
     optional TQueryResponseExtraInfo ExtraInfo = 16;
+
+    repeated string DebugInfo = 1000;
 }
 
 message TEvQueryResponse {
@@ -501,6 +503,8 @@ message TExecuterTxResult {
     reserved 5; // (deprecated) Stats
     optional NYql.NDqProto.TDqExecutionStats Stats = 6;
     reserved 7;
+
+    repeated string DebugInfo = 1000;
 };
 
 message TExecuterTxResponse {
@@ -792,6 +796,8 @@ message TEvKillScanTablet {
 message TEvKqpOutputActorResultInfo {
     repeated NKikimrDataEvents.TLock Locks = 1;
     optional bool HasRead = 2;
+
+    repeated string DebugInfo = 1000;
 }
 
 message TKqpTableSinkIndexSettings {

@@ -238,6 +238,8 @@ message TEvKqpInputActorResultInfo {
     repeated NKikimrDataEvents.TLock Locks = 1;
     optional string BatchOperationMaxKey = 2;
     repeated uint32 BatchOperationKeyIds = 3;
+
+    repeated string DebugInfo = 1000;
 }
 
 message TKqpReadRangesSourceSettings {
@@ -706,6 +708,10 @@ message TEvProposeTransactionResult {
     reserved 26; // optional NKqpProto.TKqpStatsRun KqpRunStats = 26;
     optional NYql.NDqProto.TDqComputeActorStats ComputeActorStats = 27; // overall time + per-task statistics
     optional NKikimrProto.TRowVersion CommitVersion = 28;
+
+    // Debug info about operation results in json format
+    // Enabled with EnableQueryDebugInfo feature flag
+    repeated string DebugInfo = 1000;
 }
 
 message TEvProposeTransactionRestart {
@@ -2291,6 +2297,10 @@ message TEvReadResult {
     optional uint64 RowCount = 12;
 
     optional uint32 NodeId = 13;
+
+    // Debug info about operation results in json format
+    // Enabled with EnableQueryDebugInfo feature flag
+    repeated string DebugInfo = 1000;
 
     // Data for the possibly partial result
     oneof ReadResult {

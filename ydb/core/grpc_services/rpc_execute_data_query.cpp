@@ -203,6 +203,7 @@ public:
                 }
 
                 ConvertQueryStats(kqpResponse, queryResult);
+                FillDebugInfo(*queryResult, kqpResponse);
                 if (kqpResponse.HasTxMeta()) {
                     queryResult->mutable_tx_meta()->CopyFrom(kqpResponse.GetTxMeta());
                 }

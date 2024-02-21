@@ -314,6 +314,9 @@ public:
         if (ev->Get()->Stats && Stats) {
             Stats->AddBufferStats(std::move(*ev->Get()->Stats));
         }
+        for (auto& debugInfo : ev->Get()->DebugInfo) {
+            DebugInfo.push_back(std::move(debugInfo));
+        }
         MakeResponseAndPassAway();
     }
 
@@ -345,6 +348,16 @@ public:
             for (const ui64& shardId : TxManager->GetShards()) {
                 Stats->AffectedShards.insert(shardId);
             }
+        }
+
+        if (!DebugInfo.empty()) {
+            auto& response = *ResponseEv->Record.MutableResponse();
+            auto* debugInfos = response.MutableResult()->MutableDebugInfo();
+            debugInfos->Reserve(DebugInfo.size());
+            for (auto& debugInfo : DebugInfo) {
+                debugInfos->Add(std::move(debugInfo));
+            }
+            DebugInfo.clear();
         }
 
         auto resultSize = ResponseEv->GetByteSize();
@@ -506,6 +519,10 @@ private:
             Stats->AddDatashardPrepareStats(std::move(*res->Record.MutableTxStats()));
         }
 
+        for (const auto& debugInfo : res->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         switch (res->GetStatus()) {
             case NKikimrTxDataShard::TEvProposeTransactionResult::PREPARED: {
                 if (!ShardPrepared(*shardState, res->Record)) {
@@ -587,6 +604,10 @@ private:
 
         if (Stats) {
             Stats->AddDatashardPrepareStats(std::move(*res->Record.MutableTxStats()));
+        }
+
+        for (const auto& debugInfo : res->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
         }
 
         switch (ev->Get()->GetStatus()) {
@@ -1346,6 +1367,10 @@ private:
             Stats->AddDatashardStats(std::move(*res->Record.MutableTxStats()));
         }
 
+        for (const auto& debugInfo : res->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         if (TxManager) {
             TxManager->AddParticipantNode(ev->Sender.NodeId());
         }
@@ -1417,6 +1442,10 @@ private:
                 std::move(*res->Record.MutableComputeActorStats()),
                 std::move(*res->Record.MutableTxStats()),
                 TDuration::MilliSeconds(AggregationSettings.GetCollectLongTasksStatsTimeoutMs()));
+        }
+
+        for (const auto& debugInfo : res->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
         }
 
         switch (res->GetStatus()) {
@@ -3056,6 +3085,9 @@ private:
                         TxManager->AddLock(lock.GetDataShard(), lock);
                     }
                 }
+                for (const auto& debugInfo : info.GetDebugInfo()) {
+                    DebugInfo.push_back(debugInfo);
+                }
 
                 if (!BatchOperationSettings.Empty() && info.HasBatchOperationMaxKey()) {
                     if (ResponseEv->BatchOperationMaxKeys.empty()) {
@@ -3090,6 +3122,9 @@ private:
                         TxManager->AddLock(lock.GetDataShard(), lock);
                     }
                 }
+                for (const auto& debugInfo : info.GetDebugInfo()) {
+                    DebugInfo.push_back(debugInfo);
+                }
             }
         };
 
@@ -3120,6 +3155,7 @@ private:
     ui64 TxCoordinator = 0;
     THashMap<ui64, TShardState> ShardStates;
     TVector<NKikimrDataEvents::TLock> Locks;
+    TVector<TString> DebugInfo;
     bool ReadOnlyTx = true;
     bool VolatileTx = false;
     bool ImmediateTx = false;

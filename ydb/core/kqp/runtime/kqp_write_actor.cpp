@@ -739,6 +739,10 @@ public:
             }()
             << ", Cookie=" << ev->Cookie);
 
+        for (const auto& debugInfo : ev->Get()->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         TxManager->AddParticipantNode(ev->Sender.NodeId());
 
         const bool handleOverload = ev->Get()->GetStatus() == NKikimrDataEvents::TEvWriteResult::STATUS_DISK_GROUP_OUT_OF_SPACE
@@ -1504,6 +1508,13 @@ private:
 
     NWilson::TTraceId ParentTraceId;
     NWilson::TSpan TableWriteActorSpan;
+
+    TVector<TString> DebugInfo;
+
+public:
+    TVector<TString> TakeDebugInfo() {
+        return std::move(DebugInfo);
+    }
 };
 
 
@@ -2419,6 +2430,15 @@ private:
         resultInfo.SetHasRead(
             GetOperation(Settings.GetType()) == NKikimrDataEvents::TEvWrite::TOperation::OPERATION_INSERT ||
             GetOperation(Settings.GetType()) == NKikimrDataEvents::TEvWrite::TOperation::OPERATION_UPDATE);
+
+        if (auto writeDebugInfo = WriteTableActor->TakeDebugInfo(); !writeDebugInfo.empty()) {
+            auto* debugInfos = resultInfo.MutableDebugInfo();
+            debugInfos->Reserve(writeDebugInfo.size());
+            for (auto& debugInfo : writeDebugInfo) {
+                debugInfos->Add(std::move(debugInfo));
+            }
+        }
+
         google::protobuf::Any result;
         result.PackFrom(resultInfo);
         return result;
@@ -4149,6 +4169,10 @@ public:
             }()
             << ", Cookie=" << ev->Cookie);
 
+        for (const auto& debugInfo : ev->Get()->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         TxManager->AddParticipantNode(ev->Sender.NodeId());
 
         switch (ev->Get()->GetStatus()) {
@@ -4181,6 +4205,10 @@ public:
             }()
             << ", Cookie=" << ev->Cookie);
 
+        for (const auto& debugInfo : ev->Get()->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         TxManager->AddParticipantNode(ev->Sender.NodeId());
 
         switch (ev->Get()->GetStatus()) {
@@ -4205,6 +4233,10 @@ public:
                 return builder;
             }()
             << ", Cookie=" << ev->Cookie);
+
+        for (const auto& debugInfo : ev->Get()->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
 
         TxManager->AddParticipantNode(ev->Sender.NodeId());
 
@@ -4539,7 +4571,8 @@ public:
             CA_LOG_D("Committed TxId=" << TxId.value_or(0));
             OnOperationFinished(Counters->BufferActorCommitLatencyHistogram);
             Send<ESendingType::Tail>(ExecuterActorId, new TEvKqpBuffer::TEvResult{
-                BuildStats()
+                BuildStats(),
+                BuildDebugInfo(),
             });
             ExecuterActorId = {};
             AFL_ENSURE(GetTotalMemory() == 0);
@@ -4558,7 +4591,8 @@ public:
         CA_LOG_D("RolledBack TxId=" << TxId.value_or(0));
         OnOperationFinished(Counters->BufferActorRollbackLatencyHistogram);
         Send<ESendingType::Tail>(ExecuterActorId, new TEvKqpBuffer::TEvResult{
-            BuildStats()
+            BuildStats(),
+            BuildDebugInfo(),
         });
         ExecuterActorId = {};
         PassAway();
@@ -4593,7 +4627,8 @@ public:
         Become(&TKqpBufferWriteActor::StateWrite);
 
         Send<ESendingType::Tail>(ExecuterActorId, new TEvKqpBuffer::TEvResult{
-            BuildStats()
+            BuildStats(),
+            BuildDebugInfo(),
         });
         ExecuterActorId = {};
         AFL_ENSURE(GetTotalMemory() == 0);
@@ -4694,6 +4729,19 @@ public:
         });
         TKqpTableWriterStatistics::AddLockStats(&result, LocksBrokenAsBreaker, LocksBrokenAsVictim);
         return result;
+    }
+
+    TVector<TString> BuildDebugInfo() {
+        TVector<TString> aggregated = std::move(DebugInfo);
+        for (const auto& [_, writeInfo] : WriteInfos) {
+            for (const auto& [_, actorInfo] : writeInfo.Actors) {
+                auto debugInfo = actorInfo.WriteActor->TakeDebugInfo();
+                if (!debugInfo.empty()) {
+                    aggregated.insert(aggregated.end(), debugInfo.begin(), debugInfo.end());
+                }
+            }
+        }
+        return aggregated;
     }
 
     void CancelProposal() noexcept {
@@ -4825,6 +4873,8 @@ private:
 
     NWilson::TSpan BufferWriteActorSpan;
     NWilson::TSpan BufferWriteActorStateSpan;
+
+    TVector<TString> DebugInfo;
 };
 
 class TKqpForwardWriteActor : public TActorBootstrapped<TKqpForwardWriteActor>, public NYql::NDq::IDqComputeActorAsyncOutput {

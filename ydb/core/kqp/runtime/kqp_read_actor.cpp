@@ -1072,6 +1072,10 @@ public:
             BrokenLocks.push_back(lock);
         }
 
+        for (const auto& debugInfo : record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         if (UseFollowers) {
             YQL_ENSURE(Locks.empty());
         }
@@ -1563,6 +1567,14 @@ public:
         for (auto& lock : BrokenLocks) {
             resultInfo.AddLocks()->CopyFrom(lock);
         }
+        if (!DebugInfo.empty()) {
+            auto* debugInfos = resultInfo.MutableDebugInfo();
+            debugInfos->Reserve(DebugInfo.size());
+            for (auto& debugInfo : DebugInfo) {
+                debugInfos->Add(std::move(debugInfo));
+            }
+            DebugInfo.clear();
+        }
         if (Settings->GetIsBatch() && !BatchOperationMaxRow.GetCells().empty()) {
             std::vector<TCell> keyRow;
             auto cells = BatchOperationMaxRow.GetCells();
@@ -1661,6 +1673,7 @@ private:
 
     TVector<NKikimrDataEvents::TLock> Locks;
     TVector<NKikimrDataEvents::TLock> BrokenLocks;
+    TVector<TString> DebugInfo;
 
     IKqpGateway::TKqpSnapshot Snapshot;
 

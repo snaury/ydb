@@ -388,6 +388,8 @@ class TReader {
         NeedContinue,
     };
 
+    ui64 ReadDebugOrder = 0;
+
 public:
     TReader(TReadIteratorState& state,
             IBlockBuilder& blockBuilder,
@@ -754,6 +756,8 @@ public:
 
     // return semantics the same as in the Execute()
     bool Read(TTransactionContext& txc) {
+        ReadDebugOrder = Self->NextDebugOrder();
+
         // TODO: consider trying to precharge multiple records at once in case
         // when first precharge fails?
         if (!State.Request->Keys.empty()) {
@@ -911,6 +915,31 @@ public:
         if (!State.IsHeadRead) {
             State.ReadVersion.ToProto(record.MutableSnapshot());
         }
+
+        Self->MaybeAddDebugInfo(record, [&](NJsonWriter::TBuf& b) {
+            b.WriteKey("op").WriteString("read");
+            b.WriteKey("read_id").WriteULongLong(State.ReadId.ReadId);
+            b.WriteKey("read_version").WriteString(TStringBuilder() << State.ReadVersion);
+            if (!State.IsHeadRead) {
+                b.WriteKey("snapshot_repeatable").WriteBool(true);
+            }
+            if (State.LockId) {
+                b.WriteKey("lock_tx_id").WriteULongLong(State.LockId);
+            }
+            if (auto count = State.Request->Keys.size()) {
+                b.WriteKey("keys_count").WriteULongLong(count);
+            }
+            if (auto count = State.Request->Ranges.size()) {
+                b.WriteKey("ranges_count").WriteULongLong(count);
+            }
+            if (RowsRead > 0) {
+                b.WriteKey("row_count").WriteULongLong(RowsRead);
+            }
+            if (record.GetFinished()) {
+                b.WriteKey("finished").WriteBool(true);
+            }
+            b.WriteKey("read_debug_order").WriteULongLong(ReadDebugOrder);
+        });
 
         return useful;
     }
