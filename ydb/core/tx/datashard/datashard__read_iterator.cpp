@@ -715,6 +715,18 @@ public:
             State.ReadVersion.ToProto(record.MutableSnapshot());
         }
 
+        Self->MaybeAddDebugInfo(record, [&](NJsonWriter::TBuf& b) {
+            b.WriteKey("op").WriteString("read");
+            b.WriteKey("read_id").WriteULongLong(State.ReadId.ReadId);
+            b.WriteKey("read_version").WriteString(TStringBuilder() << State.ReadVersion);
+            if (!State.IsHeadRead) {
+                b.WriteKey("snapshot_repeatable").WriteBool(true);
+            }
+            if (State.LockId) {
+                b.WriteKey("lock_tx_id").WriteULongLong(State.LockId);
+            }
+        });
+
         return useful;
     }
 

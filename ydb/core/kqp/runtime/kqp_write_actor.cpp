@@ -548,6 +548,10 @@ public:
             << ", Cookie=" << ev->Cookie);
         UpdateStats(ev->Get()->Record.GetTxStats());
 
+        for (const auto& debugInfo : ev->Get()->Record.GetDebugInfo()) {
+            DebugInfo.push_back(debugInfo);
+        }
+
         switch (ev->Get()->GetStatus()) {
         case NKikimrDataEvents::TEvWriteResult::STATUS_UNSPECIFIED: {
             CA_LOG_E("Got UNSPECIFIED for table `"
@@ -1241,6 +1245,12 @@ public:
 
     NWilson::TSpan TableWriteActorSpan;
     NWilson::TSpan TableWriteActorStateSpan;
+
+    TVector<TString> DebugInfo;
+
+    TVector<TString> TakeDebugInfo() {
+        return std::move(DebugInfo);
+    }
 };
 
 class TKqpDirectWriteActor : public TActorBootstrapped<TKqpDirectWriteActor>, public NYql::NDq::IDqComputeActorAsyncOutput, public IKqpTableWriterCallbacks {
@@ -1380,6 +1390,15 @@ private:
         resultInfo.SetHasRead(
             GetOperation(Settings.GetType()) == NKikimrDataEvents::TEvWrite::TOperation::OPERATION_INSERT ||
             GetOperation(Settings.GetType()) == NKikimrDataEvents::TEvWrite::TOperation::OPERATION_UPDATE);
+
+        if (auto writeDebugInfo = WriteTableActor->TakeDebugInfo(); !writeDebugInfo.empty()) {
+            auto* debugInfos = resultInfo.MutableDebugInfo();
+            debugInfos->Reserve(writeDebugInfo.size());
+            for (auto& debugInfo : writeDebugInfo) {
+                debugInfos->Add(std::move(debugInfo));
+            }
+        }
+
         google::protobuf::Any result;
         result.PackFrom(resultInfo);
         return result;
@@ -2596,7 +2615,8 @@ public:
             OnOperationFinished(Counters->BufferActorCommitLatencyHistogram);
             State = EState::FINISHED;
             Send<ESendingType::Tail>(ExecuterActorId, new TEvKqpBuffer::TEvResult{
-                BuildStats()
+                BuildStats(),
+                BuildDebugInfo(),
             });
             ExecuterActorId = {};
             Y_ABORT_UNLESS(GetTotalMemory() == 0);
@@ -2617,7 +2637,8 @@ public:
         OnOperationFinished(Counters->BufferActorFlushLatencyHistogram);
         State = EState::WRITING;
         Send<ESendingType::Tail>(ExecuterActorId, new TEvKqpBuffer::TEvResult{
-            BuildStats()
+            BuildStats(),
+            BuildDebugInfo(),
         });
         ExecuterActorId = {};
         Y_ABORT_UNLESS(GetTotalMemory() == 0);
@@ -2678,6 +2699,17 @@ public:
             writeInfo.WriteTableActor->FillStats(&result);
         }
         return result;
+    }
+
+    TVector<TString> BuildDebugInfo() {
+        TVector<TString> aggregated;
+        for (const auto& [_, writeInfo] : WriteInfos) {
+            auto debugInfo = writeInfo.WriteTableActor->TakeDebugInfo();
+            if (!debugInfo.empty()) {
+                aggregated.insert(aggregated.end(), debugInfo.begin(), debugInfo.end());
+            }
+        }
+        return aggregated;
     }
 
     void CancelProposal() {

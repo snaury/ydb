@@ -30,9 +30,10 @@ struct TEvFlush : public TEventLocal<TEvFlush, TKqpBufferWriterEvents::EvFlush> 
 
 struct TEvResult : public TEventLocal<TEvResult, TKqpBufferWriterEvents::EvResult> {
     TEvResult() = default;
-    TEvResult(NYql::NDqProto::TDqTaskStats&& stats) : Stats(std::move(stats)) {}
+    TEvResult(NYql::NDqProto::TDqTaskStats&& stats, TVector<TString>&& debugInfo) : Stats(std::move(stats)), DebugInfo(std::move(debugInfo)) {}
 
     std::optional<NYql::NDqProto::TDqTaskStats> Stats;
+    TVector<TString> DebugInfo;
 };
 
 struct TEvError : public TEventLocal<TEvError, TKqpBufferWriterEvents::EvError> {

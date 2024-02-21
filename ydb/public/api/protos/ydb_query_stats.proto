@@ -46,4 +46,7 @@ message QueryStats {
     // will be filled only in MODE_EXPLAIN or in MODE_EXEC with QueryStatsCollection.Mode >= STATS_COLLECTION_FULL,
     // collects additional meta about query compilation, including table metadata
     string query_meta = 8;
+
+    // Optional query execution debug info (when enabled on the server)
+    repeated string debug_info = 1000;
 }
