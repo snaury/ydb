@@ -190,4 +190,6 @@ message TFeatureFlags {
     optional bool EnableColumnStore = 165 [default = false];
     optional bool EnableStrictAclCheck = 166 [default = false];
     optional bool DatabaseYamlConfigAllowed = 167 [default = false];
+
+    optional bool EnableQueryDebugInfo = 1000 [default = true];
 }
