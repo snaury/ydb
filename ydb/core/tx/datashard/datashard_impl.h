@@ -63,6 +63,8 @@
 #include <ydb/library/actors/wilson/wilson_trace.h>
 #include <ydb/library/wilson_ids/wilson.h>
 
+#include <library/cpp/json/writer/json.h>
+
 #include <util/string/join.h>
 
 namespace NKikimr {
@@ -2167,6 +2169,24 @@ public:
     };
 
     void OnTableCreated(TTransactionContext& txc, const TActorContext& ctx);
+
+    template<class TRecord, class TCallback>
+    void MaybeAddDebugInfo(TRecord& record, TCallback&& callback) {
+        if (AppData()->FeatureFlags.GetEnableQueryDebugInfo()) {
+            NJsonWriter::TBuf b;
+            b.BeginObject();
+            b.WriteKey("tablet").WriteULongLong(this->TabletID());
+            b.WriteKey("node").WriteULongLong(this->SelfId().NodeId());
+            b.WriteKey("gen").WriteULongLong(this->Generation());
+            b.WriteKey("debug_order").WriteULongLong(++this->DebugInfoCounter);
+            std::forward<TCallback>(callback)(b);
+            b.EndObject();
+            record.AddDebugInfo(b.Str());
+        }
+    }
+
+private:
+    ui64 DebugInfoCounter = 0;
 
 private:
     ///

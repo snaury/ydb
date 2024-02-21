@@ -334,6 +334,8 @@ private:
                     response.mutable_result()->mutable_query_stats()->set_query_meta(kqpResponse.GetQueryDiagnostics());
                 }
 
+                FillDebugInfo(*response.mutable_result(), kqpResponse);
+
                 Y_PROTOBUF_SUPPRESS_NODISCARD response.SerializeToString(&out);
                 Request_->SendSerializedResult(std::move(out), record.GetYdbStatus());
             }
