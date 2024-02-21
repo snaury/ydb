@@ -77,6 +77,30 @@ inline bool CheckQuery(const TString& query, NYql::TIssues& issues) {
 void FillQueryStats(Ydb::TableStats::QueryStats& queryStats, const NKqpProto::TKqpStatsQuery& kqpStats);
 void FillQueryStats(Ydb::TableStats::QueryStats& queryStats, const NKikimrKqp::TQueryResponse& kqpResponse);
 
+template<class TPublicResponse>
+void FillDebugInfo(TPublicResponse& response, const NKikimrKqp::TQueryResponse& kqpResponse) {
+    auto size = kqpResponse.DebugInfoSize();
+    if (size > 0) {
+        auto* p = response.mutable_query_stats()->mutable_debug_info();
+        p->Reserve(size);
+        for (const auto& debugInfo : kqpResponse.GetDebugInfo()) {
+            *p->Add() = debugInfo;
+        }
+
+        // jepsen.ydb hack
+        TStringBuilder b;
+        b << "debug-info:[";
+        for (size_t i = 0; i < size; ++i) {
+            if (i != 0) {
+                b << ',';
+            }
+            b << kqpResponse.GetDebugInfo(i);
+        }
+        b << ']';
+        response.mutable_query_stats()->set_query_ast(std::move(b));
+    }
+}
+
 Ydb::Table::QueryStatsCollection::Mode GetCollectStatsMode(Ydb::Query::StatsMode mode);
 
 template <typename TDerived, typename TRequest>
