@@ -68,6 +68,10 @@ namespace NActors {
         };
 
     public:
+        // Used by a mailbox intrusive list
+        std::atomic<uintptr_t> NextLinkPtr;
+
+    public:
         template <typename TEv>
         inline TEv* CastAsLocal() const noexcept {
             auto fits = GetTypeRewrite() == TEv::EventType;

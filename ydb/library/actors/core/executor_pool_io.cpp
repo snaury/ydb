@@ -27,7 +27,7 @@ namespace NActors {
             ;
     }
 
-    ui32 TIOExecutorPool::GetReadyActivation(TWorkerContext& wctx, ui64 revolvingCounter) {
+    TMailbox* TIOExecutorPool::GetReadyActivation(TWorkerContext& wctx, ui64 revolvingCounter) {
         i16 workerId = wctx.WorkerId;
         Y_DEBUG_ABORT_UNLESS(workerId < PoolThreads);
 
@@ -56,7 +56,7 @@ namespace NActors {
                 if (parked > 0) {
                     wctx.AddParkedCycles(parked);
                 }
-                return activation;
+                return MailboxTable->Get(activation);
             }
             SpinLockPause();
         }
@@ -87,8 +87,8 @@ namespace NActors {
         ScheduleQueue->Writer.Push(deadline.MicroSeconds(), ev.Release(), cookie);
     }
 
-    void TIOExecutorPool::ScheduleActivationEx(ui32 activation, ui64 revolvingWriteCounter) {
-        Activations.Push(activation, revolvingWriteCounter);
+    void TIOExecutorPool::ScheduleActivationEx(TMailbox* mailbox, ui64 revolvingWriteCounter) {
+        Activations.Push(mailbox->Hint, revolvingWriteCounter);
         const TAtomic x = AtomicIncrement(Semaphore);
         if (x <= 0) {
             for (;; ++revolvingWriteCounter) {

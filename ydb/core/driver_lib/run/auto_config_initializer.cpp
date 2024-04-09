@@ -174,6 +174,15 @@ namespace NKikimr::NAutoConfigInitializer {
             cpuCount = GetCpuCount();
         }
         Y_ABORT_UNLESS(cpuCount > 0, "Can't read cpu count of this system");
+        if (true) {
+            return TASPools {
+                .SystemPoolId = 0,
+                .UserPoolId = 0,
+                .BatchPoolId = 0,
+                .IOPoolId = 0,
+                .ICPoolId = 0,
+            };
+        }
         if (cpuCount >= 4) {
             return TASPools();
         } else if (cpuCount == 3) {
@@ -187,6 +196,14 @@ namespace NKikimr::NAutoConfigInitializer {
         if (useAutoConfig) {
             i16 cpuCount = (config.HasCpuCount() ? config.GetCpuCount() : 0);
             return GetASPools(cpuCount);
+        } else if (true) {
+            return TASPools {
+                .SystemPoolId = 0,
+                .UserPoolId = 0,
+                .BatchPoolId = 0,
+                .IOPoolId = 0,
+                .ICPoolId = 0,
+            };
         } else {
             ui8 icPoolId = 0;
             for (ui32 i = 0; i < config.ServiceExecutorSize(); ++i) {
@@ -221,7 +238,10 @@ namespace NKikimr::NAutoConfigInitializer {
             if (servicePools.count(service)) {
                 continue;
             }
-            const ui32 pool = item.GetExecutorId();
+            ui32 pool = item.GetExecutorId();
+            if (true) {
+                pool = 0;
+            }
             servicePools.insert(std::pair<TString, ui32>(service, pool));
         }
         return servicePools;
@@ -245,7 +265,7 @@ namespace NKikimr::NAutoConfigInitializer {
         }
 
         TASPools pools = GetASPools(cpuCount);
-        ui8 poolCount = pools.GetRealPoolCount();
+            ui8 poolCount = pools.GetRealPoolCount();
         std::vector<TString> names = pools.GetRealPoolNames();
         std::vector<ui8> executorIds = pools.GetIndeces();
         std::vector<ui8> priorities = pools.GetPriorities();

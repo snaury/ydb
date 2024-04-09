@@ -15,7 +15,7 @@
 namespace NActors {
     class TActorSystem;
     class TMailboxTable;
-    struct TMailboxHeader;
+    class TMailbox;
 
     class TGenericExecutorThread;
     class IActor;
@@ -44,12 +44,12 @@ namespace NActors {
 
     struct TActivationContext {
     public:
-        TMailboxHeader& Mailbox;
+        TMailbox& Mailbox;
         TGenericExecutorThread& ExecutorThread;
         const NHPTimer::STime EventStart;
 
     protected:
-        explicit TActivationContext(TMailboxHeader& mailbox, TGenericExecutorThread& executorThread, NHPTimer::STime eventStart)
+        explicit TActivationContext(TMailbox& mailbox, TGenericExecutorThread& executorThread, NHPTimer::STime eventStart)
             : Mailbox(mailbox)
             , ExecutorThread(executorThread)
             , EventStart(eventStart)
@@ -133,7 +133,7 @@ namespace NActors {
     struct TActorContext: public TActivationContext {
         const TActorId SelfID;
         using TEventFlags = IEventHandle::TEventFlags;
-        explicit TActorContext(TMailboxHeader& mailbox, TGenericExecutorThread& executorThread, NHPTimer::STime eventStart, const TActorId& selfID)
+        explicit TActorContext(TMailbox& mailbox, TGenericExecutorThread& executorThread, NHPTimer::STime eventStart, const TActorId& selfID)
             : TActivationContext(mailbox, executorThread, eventStart)
             , SelfID(selfID)
         {
@@ -854,14 +854,14 @@ namespace NActors {
         if (!parentId) {
             parentId = CurrentRecipient;
         }
-        if (poolId == Max<ui32>()) {
+        if (poolId == Max<ui32>() || poolId == Ctx.Executor->PoolId) {
             if constexpr (SendingType == ESendingType::Common) {
-                return Ctx.Executor->Register(actor, mailboxType, ++RevolvingWriteCounter, parentId);
+                return Ctx.Executor->Register(actor, Ctx.MailboxCache, ++RevolvingWriteCounter, parentId);
             } else if (!TlsThreadContext) {
-                return Ctx.Executor->Register(actor, mailboxType, ++RevolvingWriteCounter, parentId);
+                return Ctx.Executor->Register(actor, Ctx.MailboxCache, ++RevolvingWriteCounter, parentId);
             } else {
                 ESendingType previousType = std::exchange(TlsThreadContext->SendingType, SendingType);
-                TActorId id = Ctx.Executor->Register(actor, mailboxType, ++RevolvingWriteCounter, parentId);
+                TActorId id = Ctx.Executor->Register(actor, Ctx.MailboxCache, ++RevolvingWriteCounter, parentId);
                 TlsThreadContext->SendingType = previousType;
                 return id;
             }
@@ -871,17 +871,17 @@ namespace NActors {
     }
 
     template <ESendingType SendingType>
-    TActorId TGenericExecutorThread::RegisterActor(IActor* actor, TMailboxHeader* mailbox, ui32 hint, TActorId parentId) {
+    TActorId TGenericExecutorThread::RegisterActor(IActor* actor, TMailbox* mailbox, TActorId parentId) {
         if (!parentId) {
             parentId = CurrentRecipient;
         }
         if constexpr (SendingType == ESendingType::Common) {
-            return Ctx.Executor->Register(actor, mailbox, hint, parentId);
+            return Ctx.Executor->Register(actor, mailbox, parentId);
         } else if (!TlsActivationContext) {
-            return Ctx.Executor->Register(actor, mailbox, hint, parentId);
+            return Ctx.Executor->Register(actor, mailbox, parentId);
         } else {
             ESendingType previousType = std::exchange(TlsThreadContext->SendingType, SendingType);
-            TActorId id = Ctx.Executor->Register(actor, mailbox, hint, parentId);
+            TActorId id = Ctx.Executor->Register(actor, mailbox, parentId);
             TlsThreadContext->SendingType = previousType;
             return id;
         }

@@ -130,15 +130,15 @@ namespace NActors {
     TActorId TActivationContext::RegisterWithSameMailbox(IActor* actor, TActorId parentId) {
         Y_DEBUG_ABORT_UNLESS(parentId);
         auto& ctx = *TlsActivationContext;
-        return ctx.ExecutorThread.RegisterActor(actor, &ctx.Mailbox, parentId.Hint(), parentId);
+        return ctx.ExecutorThread.RegisterActor(actor, &ctx.Mailbox, parentId);
     }
 
     TActorId TActorContext::RegisterWithSameMailbox(IActor* actor) const {
-        return ExecutorThread.RegisterActor(actor, &Mailbox, SelfID.Hint(), SelfID);
+        return ExecutorThread.RegisterActor(actor, &Mailbox, SelfID);
     }
 
     TActorId IActor::RegisterWithSameMailbox(IActor* actor) const noexcept {
-        return TlsActivationContext->ExecutorThread.RegisterActor(actor, &TlsActivationContext->Mailbox, SelfActorId.Hint(), SelfActorId);
+        return TlsActivationContext->ExecutorThread.RegisterActor(actor, &TlsActivationContext->Mailbox, SelfActorId);
     }
 
     TActorId TActivationContext::InterconnectProxy(ui32 destinationNodeId) {
