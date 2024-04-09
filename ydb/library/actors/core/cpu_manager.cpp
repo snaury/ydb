@@ -4,6 +4,7 @@
 #include "probes.h"
 
 #include "executor_pool_basic.h"
+#include "executor_pool_work_stealing.h"
 #include "executor_pool_io.h"
 
 namespace NActors {
@@ -102,7 +103,7 @@ namespace NActors {
         for (ui32 round = 0, done = 0; done < ExecutorPoolCount && round < 3; ++round) {
             done = 0;
             for (ui32 excIdx = 0; excIdx != ExecutorPoolCount; ++excIdx) {
-                if (Executors[excIdx]->Cleanup()) {
+                if (!Executors[excIdx]->Cleanup()) {
                     ++done;
                 }
             }
@@ -117,7 +118,7 @@ namespace NActors {
             Y_ABORT_UNLESS(round < 10, "actorsystem cleanup could not be completed in 10 rounds");
             done = 0;
             for (ui32 excIdx = 0; excIdx != ExecutorPoolCount; ++excIdx) {
-                if (Executors[excIdx]->Cleanup()) {
+                if (!Executors[excIdx]->Cleanup()) {
                     ++done;
                 }
             }
@@ -144,6 +145,11 @@ namespace NActors {
                 } else {
                     return new TBasicExecutorPool(cfg, Harmonizer.get(), Jail.get());
                 }
+            }
+        }
+        for (auto& cfg : Config.WorkStealing) {
+            if (cfg.PoolId == poolId) {
+                return new TWorkStealingExecutorPool(cfg, Harmonizer.get());
             }
         }
         for (TIOExecutorPoolConfig& cfg : Config.IO) {

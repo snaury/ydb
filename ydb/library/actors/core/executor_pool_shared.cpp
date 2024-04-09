@@ -88,7 +88,7 @@ void TSharedExecutorPool::Shutdown() {
 }
 
 bool TSharedExecutorPool::Cleanup() {
-    return true;
+    return false;
 }
 
 TSharedExecutorThreadCtx* TSharedExecutorPool::GetSharedThread(i16 pool) {

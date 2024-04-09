@@ -297,8 +297,26 @@ static TCpuManagerConfig CreateCpuManagerConfig(const NKikimrConfig::TActorSyste
 {
     TCpuManagerConfig cpuManager;
     cpuManager.PingInfoByPool.resize(config.GetExecutor().size());
+    ui32 totalThreads = 0;
+    bool found = false;
     for (int poolId = 0; poolId < config.GetExecutor().size(); poolId++) {
-        AddExecutorPool(cpuManager, config.GetExecutor(poolId), config, poolId, appData);
+        const auto& poolConfig = config.GetExecutor(poolId);
+        if (!found && (poolConfig.GetName() == "User" || poolConfig.GetName() == "Common")) {
+            AddExecutorPool(cpuManager, config.GetExecutor(poolId), config, /*poolId*/ 0, appData);
+            found = true;
+        }
+        totalThreads += Max(poolConfig.GetThreads(), poolConfig.GetMaxThreads());
+    }
+    if (cpuManager.Basic.size() == 1) {
+        auto& last = cpuManager.Basic.back();
+        last.Threads = totalThreads;
+        last.MaxThreadCount = totalThreads;
+    } else if (cpuManager.WorkStealing.size() == 1) {
+        auto& last = cpuManager.WorkStealing.back();
+        last.Threads = totalThreads;
+        last.MaxThreadCount = totalThreads;
+    } else {
+        Y_ABORT();
     }
     return cpuManager;
 }
