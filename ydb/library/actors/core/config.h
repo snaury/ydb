@@ -34,6 +34,10 @@ namespace NActors {
         bool UseRingQueue = false;
     };
 
+    struct TWorkStealingExecutorPoolConfig : TBasicExecutorPoolConfig {
+        // same fields
+    };
+
     struct TSharedExecutorPoolConfig {
         ui32 Threads = 1;
         ui64 SpinThreshold = 100;
@@ -64,17 +68,23 @@ namespace NActors {
 
     struct TCpuManagerConfig {
         TVector<TBasicExecutorPoolConfig> Basic;
+        TVector<TWorkStealingExecutorPoolConfig> WorkStealing;
         TVector<TIOExecutorPoolConfig> IO;
         TVector<TSelfPingInfo> PingInfoByPool;
         TSharedExecutorPoolConfig Shared;
         std::optional<TExecutorPoolJailConfig> Jail;
 
         ui32 GetExecutorsCount() const {
-            return Basic.size() + IO.size();
+            return Basic.size() + WorkStealing.size() + IO.size();
         }
 
         TString GetPoolName(ui32 poolId) const {
             for (const auto& p : Basic) {
+                if (p.PoolId == poolId) {
+                    return p.PoolName;
+                }
+            }
+            for (const auto& p : WorkStealing) {
                 if (p.PoolId == poolId) {
                     return p.PoolName;
                 }
@@ -91,6 +101,11 @@ namespace NActors {
             for (const auto& p : Basic) {
                 if (p.PoolId == poolId) {
                     return p.DefaultThreadCount;
+                }
+            }
+            for (const auto& p : WorkStealing) {
+                if (p.PoolId == poolId) {
+                    return p.Threads;
                 }
             }
             for (const auto& p : IO) {

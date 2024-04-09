@@ -82,7 +82,8 @@ void AddExecutorPool(NActors::TCpuManagerConfig& cpuManager, const NKikimrConfig
             basic.MaxThreadCount = poolConfig.GetMaxThreads();
             basic.DefaultThreadCount = poolConfig.GetThreads();
             basic.Priority = poolConfig.GetPriority();
-            cpuManager.Basic.emplace_back(std::move(basic));
+            // cpuManager.Basic.emplace_back(std::move(basic));
+            cpuManager.WorkStealing.emplace_back(NActors::TWorkStealingExecutorPoolConfig(basic));
             break;
         }
 

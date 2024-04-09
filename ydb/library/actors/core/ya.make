@@ -54,6 +54,8 @@ SRCS(
     executor_pool_io.h
     executor_pool_shared.cpp
     executor_pool_shared.h
+    executor_pool_work_stealing.cpp
+    executor_pool_work_stealing.h
     executor_thread.cpp
     executor_thread.h
     harmonizer.cpp

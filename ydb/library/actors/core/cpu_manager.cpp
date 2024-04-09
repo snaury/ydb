@@ -4,6 +4,7 @@
 #include "probes.h"
 
 #include "executor_pool_basic.h"
+#include "executor_pool_work_stealing.h"
 #include "executor_pool_io.h"
 
 namespace NActors {
@@ -144,6 +145,11 @@ namespace NActors {
                 } else {
                     return new TBasicExecutorPool(cfg, Harmonizer.get(), Jail.get());
                 }
+            }
+        }
+        for (auto& cfg : Config.WorkStealing) {
+            if (cfg.PoolId == poolId) {
+                return new TWorkStealingExecutorPool(cfg, Harmonizer.get());
             }
         }
         for (TIOExecutorPoolConfig& cfg : Config.IO) {

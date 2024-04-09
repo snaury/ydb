@@ -285,6 +285,20 @@ struct TActorBenchmark {
         setup->CpuManager.Basic.emplace_back(std::move(basic));
     }
 
+    static void AddWorkStealingPool(THolder<TActorSystemSetup>& setup, ui32 threads, bool activateEveryEvent) {
+        TWorkStealingExecutorPoolConfig config;
+        config.PoolId = setup->GetExecutorsCount();
+        config.PoolName = TStringBuilder() << "ws" << config.PoolId;
+        config.Threads = threads;
+        config.SpinThreshold = TSettings::DefaultSpinThreshold;
+        config.TimePerMailbox = TDuration::Hours(1);
+        config.SoftProcessingDurationTs = Us2Ts(100);
+        if (activateEveryEvent) {
+            config.EventsPerMailbox = 1;
+        }
+        setup->CpuManager.WorkStealing.emplace_back(std::move(config));
+    }
+
     static THolder<TActorSystemSetup> GetActorSystemSetup() {
         auto setup = MakeHolder<NActors::TActorSystemSetup>();
         setup->NodeId = 1;
@@ -294,6 +308,7 @@ struct TActorBenchmark {
 
     enum class EPoolType {
         Basic,
+        WorkStealing,
     };
 
     static THolder<TActorSystemSetup> InitActorSystemSetup(EPoolType poolType, ui32 poolsCount, ui32 threads, bool activateEveryEvent) {
@@ -301,6 +316,13 @@ struct TActorBenchmark {
             THolder<TActorSystemSetup> setup = GetActorSystemSetup();
             for (ui32 i = 0; i < poolsCount; ++i) {
                 AddBasicPool(setup, threads, activateEveryEvent, 0);
+            }
+            return setup;
+        }
+        if (poolType == EPoolType::WorkStealing) {
+            THolder<TActorSystemSetup> setup = GetActorSystemSetup();
+            for (ui32 i = 0; i < poolsCount; ++i) {
+                AddWorkStealingPool(setup, threads, activateEveryEvent);
             }
             return setup;
         }
@@ -711,7 +733,7 @@ struct TActorBenchmark {
             for (ui32 actorPairs : actorPairsList) {
                 for (ui32 inFlight : inFlights) {
                     auto stats = CountStats([threads, actorPairs, inFlight, subtestDuration] {
-                        return BenchContentedThreads(threads, actorPairs, EPoolType::Basic, ESendingType::Common, subtestDuration, inFlight);
+                        return BenchContentedThreads(threads, actorPairs, EPoolType::WorkStealing, ESendingType::Common, subtestDuration, inFlight);
                     }, 3);
                     double elapsedSeconds = stats.ElapsedTime.Mean / 1e9;
                     ui64 eventsPerSecond = stats.SentEvents.Mean / elapsedSeconds;
@@ -728,7 +750,7 @@ struct TActorBenchmark {
             for (ui32 actorPairs : actorPairsList) {
                 for (ui32 stars : starsList) {
                     auto stats = CountStats([threads, actorPairs, stars] {
-                        return BenchStarContentedThreads(threads, actorPairs, EPoolType::Basic, ESendingType::Common, TDuration::Seconds(1), stars);
+                        return BenchStarContentedThreads(threads, actorPairs, EPoolType::WorkStealing, ESendingType::Common, TDuration::Seconds(1), stars);
                     }, 3);
                     double elapsedSeconds = stats.ElapsedTime.Mean / 1e9;
                     ui64 eventsPerSecond = stats.SentEvents.Mean / elapsedSeconds;
