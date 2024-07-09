@@ -48,3 +48,135 @@ message TEvCoordinatorStateResponse {
     // Will be set for incomplete replies
     optional bytes ContinuationToken = 5;
 }
+
+// Subscribe to the transaction stream
+message TEvTransactionStreamSubscribe {
+    // A unique (per client actor) non-decreasing subscription id
+    // All subscriptions with a lower id from the same actor will be
+    // automatically removed and rejected
+    optional uint64 SubscriptionId = 1;
+
+    // A list of tablets to initially subscribe
+    // Only transactions that have these tablets as participants will be streamed
+    repeated fixed64 TabletIds = 2 [packed = true];
+
+    // Transaction stream can be viewed as an ordered list of (Step, TxId, TabletId) tuples
+    // This specifies the last observed tuple when resubscribing
+    // Only transactions after this tuple will be transmitted
+    // When the last observed step was complete TxId and TabletId need to have the max value
+    optional uint64 LastObservedStep = 3;
+    optional fixed64 LastObservedTxId = 4;
+    optional fixed64 LastObservedTabletId = 5;
+
+    // A list of incomplete tablet subscriptions
+    // When subscribing to new tablets their transaction stream is sent
+    // out-of-band first, until it catches up with the rest of the stream. When
+    // resubscribing (e.g. due to a network failure) this specifies which
+    // tablets have been incomplete before the subscription failed, in the
+    // order of their subscriptions. This allows the stream to be fully
+    // restored to the same state, including incomplete positions.
+    // This initial incomplete stream will have OpId = 0.
+    repeated fixed64 IncompleteTabletIds = 6 [packed = true];
+
+    // The last observed out-of-band event for the first tablet in the list
+    optional uint64 LastIncompleteStep = 7;
+    optional fixed64 LastIncompleteTxId = 8;
+}
+
+// Subscribe to additional or unsubscribe from tablets in the transaction stream
+message TEvTransactionStreamModify {
+    // The subscription id
+    optional uint64 SubscriptionId = 1;
+
+    // Coordinator will start streaming our-of-band data for added tablets with
+    // the specified operation id. When client needs to remove and then re-add
+    // some tablets while their data is still streaming it allows clients to
+    // distinguish between different versions of the same stream. It is
+    // reconnected to use unique per-subscription numbers as operation ids.
+    optional uint64 OpId = 2;
+
+    // A list of tablets to unsubscribe from. Their (partial) out-of-band
+    // streams may be interrupted.
+    repeated fixed64 RemoveTabletIds = 3 [packed = true];
+
+    // A list of additional tablets to subscribe to. They will be added in the
+    // same order and sent out-of-bound unless removed.
+    repeated fixed64 AddTabletIds = 4 [packed = true];
+}
+
+// Unsubscribe from the transaction stream completely
+message TEvTransactionStreamUnsubscribe {
+    // The subscription id
+    optional uint64 SubscriptionId = 1;
+}
+
+// The transaction stream data chunk
+message TEvTransactionStreamData {
+    // The subscription id
+    optional uint64 SubscriptionId = 1;
+
+    // The message sequence number within the same subscription
+    // Sequence numbers count from 1 without skipping any numbers
+    optional uint64 SeqNo = 2;
+
+    message TOutOfBandTransaction {
+        optional fixed64 TxId = 1;
+        // Note: transaction body is not currently supported
+        optional bytes Body = 2;
+    }
+
+    message TOutOfBandStep {
+        optional uint64 Step = 1;
+        repeated TOutOfBandTransaction Transactions = 2;
+    }
+
+    message TOutOfBandTablet {
+        optional uint64 OpId = 1;
+        optional fixed64 TabletId = 2;
+        repeated TOutOfBandStep Steps = 3;
+
+        // When true the tablet is synchronized with the last transmitted step
+        optional bool Complete = 4;
+    }
+
+    message TStreamTransaction {
+        optional fixed64 TxId = 1;
+        repeated fixed64 TabletIds = 2 [packed = true];
+
+        // Note: transaction body is not currently supported, but when it does
+        // all participants are expected to have the same transaction body.
+        // When transaction is split across several messages only the first one
+        // will have the body specified.
+        optional bytes Body = 3;
+    }
+
+    message TStreamStep {
+        optional uint64 Step = 1;
+        repeated TStreamTransaction Transactions = 2;
+        // When true the step is complete and all transactions up to the
+        // specified step (inclusive) have been transmitted.
+        optional bool Complete = 3;
+    }
+
+    // Out-of-band data for newly subscribed tablets, transmitted in the order
+    // of new subscriptions. In cases where message also contains normal steps
+    // out-of-band data is ordered before those steps. Note: out-of-band data
+    // is never transmitted in the middle of a normal step, only between normal
+    // steps.
+    repeated TOutOfBandTablet OutOfBandTablets = 3;
+
+    // Steps are transmitted in increasing Step order, where transactions
+    // ordered by TxId, and tablets in transactions ordered by TabletId.
+    // A step and/or transaction may be incomplete, with additional messages
+    // continuing after the last one.
+    repeated TStreamStep Steps = 4;
+}
+
+// Acknowledges the receipt of stream data up to the given SeqNo
+message TEvTransactionStreamDataAck {
+    // The subscription id
+    optional uint64 SubscriptionId = 1;
+
+    // The last acknowledged sequence number
+    optional uint64 AckSeqNo = 2;
+}

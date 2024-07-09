@@ -22,6 +22,11 @@ struct TEvTxCoordinator {
 
         EvCoordinatorStateRequest = EvCoordinatorStep + 4 * 512,
         EvCoordinatorStateResponse,
+        EvTransactionStreamSubscribe,
+        EvTransactionStreamModify,
+        EvTransactionStreamUnsubscribe,
+        EvTransactionStreamData,
+        EvTransactionStreamDataAck,
 
         EvEnd
     };
@@ -81,6 +86,51 @@ struct TEvTxCoordinator {
                           EvCoordinatorStateResponse>
     {
         TEvCoordinatorStateResponse() = default;
+    };
+
+    struct TEvTransactionStreamSubscribe
+        : public TEventPBWithArena<
+            TEvTransactionStreamSubscribe,
+            NKikimrTxCoordinator::TEvTransactionStreamSubscribe,
+            EvTransactionStreamSubscribe>
+    {
+        TEvTransactionStreamSubscribe() = default;
+    };
+
+    struct TEvTransactionStreamModify
+        : public TEventPBWithArena<
+            TEvTransactionStreamModify,
+            NKikimrTxCoordinator::TEvTransactionStreamModify,
+            EvTransactionStreamModify>
+    {
+        TEvTransactionStreamModify() = default;
+    };
+
+    struct TEvTransactionStreamUnsubscribe
+        : public TEventPB<
+            TEvTransactionStreamUnsubscribe,
+            NKikimrTxCoordinator::TEvTransactionStreamUnsubscribe,
+            EvTransactionStreamUnsubscribe>
+    {
+        TEvTransactionStreamUnsubscribe() = default;
+    };
+
+    struct TEvTransactionStreamData
+        : public TEventPBWithArena<
+            TEvTransactionStreamData,
+            NKikimrTxCoordinator::TEvTransactionStreamData,
+            EvTransactionStreamData>
+    {
+        TEvTransactionStreamData() = default;
+    };
+
+    struct TEvTransactionStreamDataAck
+        : public TEventPB<
+            TEvTransactionStreamDataAck,
+            NKikimrTxCoordinator::TEvTransactionStreamDataAck,
+            EvTransactionStreamDataAck>
+    {
+        TEvTransactionStreamDataAck() = default;
     };
 
 };
