@@ -57,6 +57,7 @@ public:
         cmd.SetCreateTimeMS(record.GetApproximateCreationDateTime().MilliSeconds());
         switch (record.GetKind()) {
         case TChangeRecord::EKind::CdcDataChange:
+        case TChangeRecord::EKind::CdcHeartbeatPrivate:
             return SerializeDataChange(cmd, record);
         case TChangeRecord::EKind::CdcHeartbeat:
             return SerializeHeartbeat(cmd, record);
@@ -292,6 +293,12 @@ protected:
     void SerializeToJson(NJson::TJsonValue& json, const TChangeRecord& record) override {
         if (record.GetKind() == TChangeRecord::EKind::CdcHeartbeat) {
             return SerializeVirtualTimestamp(json["resolved"], {record.GetStep(), record.GetTxId()});
+        }
+
+        json["shard_id"] = Opts.ShardId;
+
+        if (record.GetKind() == TChangeRecord::EKind::CdcHeartbeatPrivate) {
+            return SerializeVirtualTimestamp(json["resolved_private"], {record.GetStep(), record.GetTxId()});
         }
 
         Y_ABORT_UNLESS(record.GetSchema());

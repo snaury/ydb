@@ -45,7 +45,8 @@ public:
         const auto heartbeats = Self->GetCdcStreamHeartbeatManager().EmitHeartbeats(txc.DB, Edge);
 
         for (const auto& [streamPathId, info] : heartbeats) {
-            auto recordPtr = TChangeRecordBuilder(TChangeRecord::EKind::CdcHeartbeat)
+        for (auto kind : {TChangeRecord::EKind::CdcHeartbeatPrivate, TChangeRecord::EKind::CdcHeartbeat}) {
+            auto recordPtr = TChangeRecordBuilder(kind)
                 .WithOrder(Self->AllocateChangeRecordOrder(db))
                 .WithGroup(0)
                 .WithStep(info.Last.Step)
@@ -68,6 +69,7 @@ public:
                 .TableId = record.GetTableId(),
                 .SchemaVersion = record.GetSchemaVersion(),
             });
+        }
         }
 
         return true;

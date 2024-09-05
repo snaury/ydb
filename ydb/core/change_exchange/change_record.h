@@ -31,6 +31,7 @@ public:
         AsyncIndex,
         CdcDataChange,
         CdcHeartbeat,
+        CdcHeartbeatPrivate,
     };
 
 public:

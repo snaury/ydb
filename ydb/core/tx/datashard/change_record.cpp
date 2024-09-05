@@ -25,6 +25,9 @@ void TChangeRecord::Serialize(NKikimrChangeExchange::TChangeRecord& record) cons
         case EKind::CdcHeartbeat: {
             break;
         }
+        case EKind::CdcHeartbeatPrivate: {
+            break;
+        }
     }
 }
 
@@ -54,6 +57,10 @@ TConstArrayRef<TCell> TChangeRecord::GetKey() const {
         case EKind::CdcHeartbeat: {
             Y_ABORT("Not supported");
         }
+
+        case EKind::CdcHeartbeatPrivate: {
+            Y_ABORT("Not supported");
+        }
     }
 
     Y_ABORT_UNLESS(Key);
@@ -74,6 +81,7 @@ TInstant TChangeRecord::GetApproximateCreationDateTime() const {
 bool TChangeRecord::IsBroadcast() const {
     switch (Kind) {
         case EKind::CdcHeartbeat:
+        case EKind::CdcHeartbeatPrivate:
             return true;
         default:
             return false;
