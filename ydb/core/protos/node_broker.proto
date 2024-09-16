@@ -119,3 +119,81 @@ message TSetConfigRequest {
 message TSetConfigResponse {
     optional TStatus Status = 1;
 }
+
+// Subscribes to the stream of node list changes.
+// Message may specify an arbitrary cookie, which will be echoed in updates.
+message TEvSubscribeNodes {
+    // A non-decreasing per-sender subscription id
+    // All subscriptions with a smaller id are automatically dropped
+    optional uint64 SubscriptionId = 1;
+
+    // Currently cached node list version
+    // The first update will only include changes between cached and current
+    // version. A zero should be specified when subscribing for the first time.
+    optional uint64 CachedVersion = 2;
+}
+
+// Notifies subscriber on node list changes.
+// Message cookie will match TEvSubscribeNodes that created the subscription.
+message TEvUpdateNodes {
+    // The subscription id from the original request
+    optional uint64 SubscriptionId = 1;
+
+    // A strictly increasing sequence number within a single subscription,
+    // starting from 1 and without skipping numbers. May be used to detect
+    // dropped messages in the update stream.
+    optional uint64 SeqNo = 2;
+
+    // Current epoch this update corresponds to. The first update may be empty,
+    // and generally notifies that the client has an up-to-date node list.
+    // Subsequent updates are sent when node list version changes, and multiple
+    // updates may coalesce into a single message.
+    optional TEpoch Epoch = 3;
+
+    // A list of nodes that have been added or modified.
+    repeated TNodeInfo Nodes = 5;
+
+    // A list of node ids that have been marked as expired.
+    repeated uint32 ExpiredNodes = 6 [packed = true];
+
+    // A list of node ids that have been removed and may be reused later.
+    repeated uint32 RemovedNodes = 7 [packed = true];
+}
+
+// Notifies subscriber about a dropped subscription
+// This may be useful when subscribing for the first time after a node restart
+// in a very unlikely event of a sender actor id reuse, while a previous
+// subscription is still active. The latest subscription id may be learned
+// in that case, and restarted client may use it to compute the next
+// subscription id.
+message TEvUnsubscribed {
+    // The subscription id from the original request
+    optional uint64 SubscriptionId = 1;
+
+    // The latest subscription id that replaced the subscription
+    optional uint64 LatestSubscriptionId = 2;
+}
+
+// Requests node list to synchronize to the latest version
+// Must be sent within an existing subscription
+// Message may specify an arbitrary cookie, which will be echoed in the response
+message TEvSyncNodesRequest {
+    // The subscription id of an existing subscription
+    optional uint64 SubscriptionId = 1;
+}
+
+// Notifies node list is synchronized to the version that was current at the
+// time of the request. NodeBroker is guaranteed to have sent all updates that
+// update node list to that version before sending this message.
+// Message cookie will match TEvSyncNodesRequest.
+message TEvSyncNodesResponse {
+    // The subscription id from the request
+    optional uint64 SubscriptionId = 1;
+
+    // The next sequence number within the subcription
+    optional uint64 SeqNo = 3;
+
+    // The synchronized epoch, subscriber is guaranteed to have sent all
+    // updates up to the specified epoch, inclusive.
+    optional TEpoch Epoch = 4;
+}
