@@ -49,6 +49,7 @@ struct TReadIteratorState {
         Init,
         Executing,
         Exhausted,
+        Scan,
     };
 
     struct TQuota {
@@ -65,17 +66,20 @@ struct TReadIteratorState {
 
 public:
     TReadIteratorState(
-            const TReadIteratorId& readId, const TPathId& pathId,
+            const TReadIteratorId& readId, ui64 localReadId, const TPathId& pathId,
             const TActorId& sessionId, const TRowVersion& readVersion, bool isHeadRead,
-            TMonotonic ts, NLWTrace::TOrbit&& orbit = {})
-        : ReadId(readId.ReadId)
+            TMonotonic ts)
+        : ReadId(readId)
+        , LocalReadId(localReadId)
         , PathId(pathId)
         , ReadVersion(readVersion)
         , IsHeadRead(isHeadRead)
         , SessionId(sessionId)
         , StartTs(ts)
-        , Orbit(std::move(orbit))
     {}
+
+    TReadIteratorState(const TReadIteratorState&) = delete;
+    TReadIteratorState& operator=(const TReadIteratorState&) = delete;
 
     bool IsExhausted() const { return State == EState::Exhausted; }
 
@@ -155,13 +159,16 @@ public:
         }
     }
 
+    void ForwardScanEvent(std::unique_ptr<IEventHandle>&& ev, ui64 tabletId);
+
 public:
     EState State = EState::Init;
 
     // Data from original request //
 
-    ui64 ReadId;
-    TPathId PathId;
+    const TReadIteratorId ReadId;
+    const ui64 LocalReadId;
+    const TPathId PathId;
     std::vector<NTable::TTag> Columns;
     TRowVersion ReadVersion;
     bool IsHeadRead;
@@ -214,11 +221,15 @@ public:
     TString LastProcessedKey;
     bool LastProcessedKeyErased = false;
 
-    // Orbit used for tracking progress
-    NLWTrace::TOrbit Orbit;
+    // used when read is implemented with a scan
+    ui64 ScanId = 0;
+    ui64 ScanLocalTid = 0;
+    TActorId ScanActorId;
+    // temporary storage for forwarded events until scan has started
+    std::vector<std::unique_ptr<IEventHandle>> ScanPendingEvents;
 };
 
-using TReadIteratorStatePtr = std::unique_ptr<TReadIteratorState>;
-using TReadIteratorsMap = std::unordered_map<TReadIteratorId, TReadIteratorStatePtr, TReadIteratorId::THash>;
+using TReadIteratorsMap = THashMap<TReadIteratorId, TReadIteratorState, TReadIteratorId::THash>;
+using TReadIteratorsLocalMap = THashMap<ui64, TReadIteratorState*>;
 
 } // NKikimr::NDataShard

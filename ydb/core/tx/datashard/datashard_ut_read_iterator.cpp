@@ -2274,7 +2274,6 @@ Y_UNIT_TEST_SUITE(DataShardReadIterator) {
         // now allow to continue read
         shouldDrop = false;
         TAutoPtr<TEvDataShard::TEvReadContinue> request = IEventHandle::Release<TEvDataShard::TEvReadContinue>(continueEvent);
-        UNIT_ASSERT_VALUES_EQUAL(request->ReadId, 1UL);
 
         const auto& table = helper.Tables["table-1"];
         runtime.SendToPipe(
@@ -2368,7 +2367,6 @@ Y_UNIT_TEST_SUITE(DataShardReadIterator) {
         // now allow to continue read and check we don't get extra read result with error
         shouldDrop = false;
         TAutoPtr<TEvDataShard::TEvReadContinue> request = IEventHandle::Release<TEvDataShard::TEvReadContinue>(continueEvent);
-        UNIT_ASSERT_VALUES_EQUAL(request->ReadId, 1UL);
 
         const auto& table = helper.Tables["table-1"];
         runtime.SendToPipe(
@@ -4022,7 +4020,7 @@ Y_UNIT_TEST_SUITE(DataShardReadIteratorSysTables) {
 
 Y_UNIT_TEST_SUITE(DataShardReadIteratorState) {
     Y_UNIT_TEST(ShouldCalculateQuota) {
-        NDataShard::TReadIteratorState state(TReadIteratorId({}, 0), TPathId(0, 0), {}, TRowVersion::Max(), true, {});
+        NDataShard::TReadIteratorState state(TReadIteratorId({}, 0), 0, TPathId(0, 0), {}, TRowVersion::Max(), true, {});
         state.Quota.Rows = 100;
         state.Quota.Bytes = 1000;
         state.ConsumeSeqNo(10, 100); // seqno1
