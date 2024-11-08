@@ -175,6 +175,29 @@ Y_UNIT_TEST_SUITE(LockFreeMailbox) {
         Cerr << "... there have been " << switches.load() << " switches to consumer mode" << Endl;
     }
 
+    Y_UNIT_TEST(RunQueue) {
+        TMailbox a;
+        TMailbox b;
+        TMailbox c;
+        TMailboxRunQueue q;
+
+        UNIT_ASSERT_VALUES_EQUAL(q.Push(&a), true);
+        UNIT_ASSERT_VALUES_EQUAL(q.Push(&b), false);
+        UNIT_ASSERT_VALUES_EQUAL(q.Push(&c), false);
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(&a, true));
+        UNIT_ASSERT_VALUES_EQUAL(q.Push(&a), false);
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(&b, true));
+        UNIT_ASSERT_VALUES_EQUAL(q.Push(&b), false);
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(&c, true));
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(&a, true));
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(&b, false));
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(nullptr, false));
+        UNIT_ASSERT_VALUES_EQUAL(q.Push(&a), true);
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(&a, false));
+        UNIT_ASSERT_VALUES_EQUAL(q.Push(&b), true);
+        UNIT_ASSERT_VALUES_EQUAL(q.Pop(), std::make_pair(&b, false));
+    }
+
 } // Y_UNIT_TEST_SUITE(LockFreeMailbox)
 
 } // namespace NActors

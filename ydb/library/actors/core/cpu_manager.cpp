@@ -134,6 +134,7 @@ namespace NActors {
     IExecutorPool* TCpuManager::CreateExecutorPool(ui32 poolId) {
         for (TBasicExecutorPoolConfig& cfg : Config.Basic) {
             if (cfg.PoolId == poolId) {
+#if 0
                 if (cfg.HasSharedThread) {
                     auto *sharedPool = static_cast<TSharedExecutorPool*>(Shared.get());
                     auto *pool = new TBasicExecutorPool(cfg, Harmonizer.get(), Jail.get());
@@ -144,6 +145,14 @@ namespace NActors {
                 } else {
                     return new TBasicExecutorPool(cfg, Harmonizer.get(), Jail.get());
                 }
+#else
+                TIOExecutorPoolConfig c;
+                c.PoolId = cfg.PoolId;
+                c.PoolName = cfg.PoolName;
+                c.Threads = cfg.Threads;
+                c.Affinity = cfg.Affinity;
+                return new TIOExecutorPool(c);
+#endif
             }
         }
         for (TIOExecutorPoolConfig& cfg : Config.IO) {

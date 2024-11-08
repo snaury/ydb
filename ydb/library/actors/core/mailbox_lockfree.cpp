@@ -509,6 +509,7 @@ namespace NActors {
 
     TMailbox* TMailboxCache::Allocate() {
         Y_ABORT_UNLESS(Table);
+        return Table->Allocate();
 
         if (!CurrentBlock) {
             if (BackupBlock) [[likely]] {
@@ -538,6 +539,7 @@ namespace NActors {
 
     void TMailboxCache::Free(TMailbox* mailbox) {
         Y_ABORT_UNLESS(Table);
+        return Table->Free(mailbox);
 
         if (CurrentSize >= TMailboxTable::BlockSize) {
             if (BackupBlock) {
@@ -762,6 +764,94 @@ namespace NActors {
 
         // We don't have any more lines available (more than 536M actors)
         return nullptr;
+    }
+
+    TMailboxRunQueue::~TMailboxRunQueue() {
+        // nothing
+    }
+
+    bool TMailboxRunQueue::Push(TMailbox* m) {
+        // Mailbox must not currently be in any run queue
+        Y_ABORT_UNLESS(m->NextRunPtr.load(std::memory_order_relaxed) == 0);
+
+        bool wasEmpty;
+        uintptr_t lastValue = Fresh.load(std::memory_order_relaxed);
+        do {
+            wasEmpty = lastValue == 0;
+            m->NextRunPtr.store(lastValue ? lastValue : /* end marker */ 1, std::memory_order_relaxed);
+        } while (!Fresh.compare_exchange_weak(lastValue, reinterpret_cast<uintptr_t>(m), std::memory_order_release));
+
+        return wasEmpty;
+    }
+
+    std::pair<TMailbox*, bool> TMailboxRunQueue::Pop() {
+        if (!Head) {
+            uintptr_t lastValue = Fresh.load(std::memory_order_acquire);
+            if (lastValue == 0) {
+                // The queue is currently empty
+                return { nullptr, false };
+            }
+
+            TMailbox* tail;
+            uintptr_t prevValue;
+            TMailbox* prev;
+            for (;;) {
+                // We are supposed to run under the lock, it cannot become empty under us
+                Y_ABORT_UNLESS(lastValue && lastValue != 1);
+                tail = reinterpret_cast<TMailbox*>(lastValue);
+                prevValue = tail->NextRunPtr.load(std::memory_order_relaxed);
+                Y_ABORT_UNLESS(prevValue != 0);
+                prev = reinterpret_cast<TMailbox*>(prevValue != 1 ? prevValue : 0);
+                if (prev) {
+                    // Multiple items, replace with an end marker
+                    if (Fresh.compare_exchange_weak(lastValue, /* end marker */ 1, std::memory_order_acquire)) {
+                        // Success, we now own the list
+                        break;
+                    }
+                } else {
+                    // A single run queue item, try a single CAS to empty
+                    if (Fresh.compare_exchange_weak(lastValue, /* empty marker */ 0, std::memory_order_acquire)) {
+                        // Success, we now own this tail pointer
+                        tail->NextRunPtr.store(0, std::memory_order_relaxed);
+                        return { tail, false };
+                    }
+                }
+            }
+
+            // Invert the obtained list (it has at least two elements)
+            TMailbox* head = tail;
+            TMailbox* next = nullptr;
+            uintptr_t nextValue = /* end marker */ 1;
+            while (prev) {
+                head->NextRunPtr.store(nextValue, std::memory_order_relaxed);
+                next = head;
+                nextValue = reinterpret_cast<uintptr_t>(next);
+                head = prev;
+                prevValue = head->NextRunPtr.load(std::memory_order_relaxed);
+                Y_ABORT_UNLESS(prevValue != 0);
+                prev = reinterpret_cast<TMailbox*>(prevValue != 1 ? prevValue : 0);
+            }
+            head->NextRunPtr.store(nextValue, std::memory_order_relaxed);
+
+            Head = head;
+            Tail = tail;
+        }
+
+        TMailbox* m = Head;
+        uintptr_t nextValue = m->NextRunPtr.load(std::memory_order_relaxed);
+        Y_ABORT_UNLESS(nextValue != 0);
+        Head = reinterpret_cast<TMailbox*>(nextValue != 1 ? nextValue : 0);
+        m->NextRunPtr.store(0, std::memory_order_relaxed);
+
+        if (Head) {
+            return { m, true };
+        }
+        Tail = nullptr;
+
+        // Try to mark the queue as empty
+        uintptr_t expected = 1;
+        bool empty = Fresh.compare_exchange_strong(expected, 0, std::memory_order_acquire);
+        return { m, !empty };
     }
 
 } // namespace NActors

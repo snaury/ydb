@@ -286,4 +286,19 @@ namespace NActors {
         size_t BackupSize = 0;
     };
 
+    class TMailboxRunQueue {
+    public:
+        TMailboxRunQueue() = default;
+        ~TMailboxRunQueue();
+
+        bool Push(TMailbox* m);
+
+        std::pair<TMailbox*, bool> Pop();
+
+    private:
+        std::atomic<uintptr_t> Fresh{ 0 };
+        TMailbox* Head{ nullptr };
+        TMailbox* Tail{ nullptr };
+    };
+
 } // namespace NActors
