@@ -514,7 +514,7 @@ class _LazyParser:
 
 
 class ResultSets(list):
-    def __init__(self, result_sets_pb, table_client_settings=None):
+    def __init__(self, result_sets_pb, table_client_settings=None, query_stats=None):
         make_lazy = False if table_client_settings is None else table_client_settings._make_result_sets_lazy
 
         allow_truncated_result = _default_allow_truncated_result
@@ -529,3 +529,4 @@ class ResultSets(list):
                 raise issues.TruncatedResponseError("Response for the request was truncated by server")
             result_sets.append(result_set)
         super(ResultSets, self).__init__(result_sets)
+        self.query_stats = query_stats

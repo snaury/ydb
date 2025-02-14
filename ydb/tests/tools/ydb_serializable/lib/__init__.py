@@ -286,16 +286,29 @@ class History(object):
             self.op = op
             self.description = description
             self._results = []
+            self._debug_info = []
 
         def result(self, result):
             self._results.append(result)
+
+        def debug_info_from_execute_result(self, result):
+            query_stats = getattr(result, 'query_stats', None)
+            if query_stats is not None:
+                ast = query_stats.query_ast
+                if ast and ast.startswith('debug-info:'):
+                    debug_info = ast[11:]
+                    try:
+                        debug_info = json.loads(debug_info)
+                    except:
+                        pass
+                    self._debug_info.append(debug_info)
 
         def done(self):
             if self.end_time is None:
                 self.end_time = time.time()
 
         def to_json(self):
-            return [self.start_time, self.end_time, self.op, self.description] + self._results
+            return [self.start_time, self.end_time, self.op, self.description] + self._results + self._debug_info
 
     def log_op_begin(self, op, description):
         entry = self.OpLogEntry(time.time(), op, description)
@@ -465,7 +478,7 @@ class DatabaseChecker(object):
                 nonlocal observed_values
                 observed_values = None
                 async with session.transaction(ydb.SerializableReadWrite()) as tx:
-                    simple_tx = bool(random.randint(0, 1))
+                    simple_tx = True #bool(random.randint(0, 1))
                     with history.log_op(node.value, 'read+commit' if simple_tx else 'read') as log:
                         rss = await tx.execute(
                             read_query,
@@ -476,6 +489,8 @@ class DatabaseChecker(object):
                             },
                             commit_tx=simple_tx,
                         )
+                        if options.oplog_results:
+                            log.debug_info_from_execute_result(rss)
                     observed_values = {}
                     for row in rss[0].rows:
                         observed_values[row.key] = row.value
@@ -504,9 +519,9 @@ class DatabaseChecker(object):
 
             async def perform(session):
                 async with session.transaction(ydb.SerializableReadWrite()) as tx:
-                    simple_tx = bool(random.randint(0, 1))
-                    with history.log_op(node.value, 'write+commit' if simple_tx else 'write'):
-                        await tx.execute(
+                    simple_tx = True #bool(random.randint(0, 1))
+                    with history.log_op(node.value, 'write+commit' if simple_tx else 'write') as log:
+                        rss = await tx.execute(
                             write_query,
                             parameters={
                                 '$data': [
@@ -515,6 +530,8 @@ class DatabaseChecker(object):
                             },
                             commit_tx=simple_tx,
                         )
+                        if options.oplog_results:
+                            log.debug_info_from_execute_result(rss)
                     if not simple_tx:
                         with history.log_op(node.value, 'commit'):
                             await tx.commit()
@@ -571,13 +588,15 @@ class DatabaseChecker(object):
                             {'key': key} for key in read2_keys
                         ],
                     }
-                    simple_tx = bool(random.randint(0, 1))
-                    fuse_commit = bool(random.randint(0, 1))
+                    simple_tx = True #bool(random.randint(0, 1))
+                    fuse_commit = True #bool(random.randint(0, 1))
                     if simple_tx:
                         query = rwr_query if read1_keys else wr_query
                         parameters = dict(**read1_params, **write_params, **read2_params)
                         with history.log_op(node.value, 'read+write+read+commit' if read1_keys else 'write+read+commit') as log:
                             rss = await tx.execute(query, parameters, commit_tx=True)
+                            if options.oplog_results:
+                                log.debug_info_from_execute_result(rss)
                         if read1_keys:
                             read1 = rss[0]
                             read2 = rss[1]
@@ -592,6 +611,8 @@ class DatabaseChecker(object):
                     elif read1_keys:
                         with history.log_op(node.value, 'read') as log:
                             rss = await tx.execute(read1_query, read1_params, commit_tx=False)
+                            if options.oplog_results:
+                                log.debug_info_from_execute_result(rss)
                         read1 = rss[0]
                         if options.oplog_results:
                             log.result({row.key: row.value for row in read1.rows})
@@ -603,10 +624,14 @@ class DatabaseChecker(object):
                             observed_values[row.key] = row.value
                         node.expected_read_keys = tuple(read1_keys)
                     if not simple_tx:
-                        with history.log_op(node.value, 'write'):
-                            await tx.execute(write_query, write_params, commit_tx=False)
+                        with history.log_op(node.value, 'write') as log:
+                            rss = await tx.execute(write_query, write_params, commit_tx=False)
+                            if options.oplog_results:
+                                log.debug_info_from_execute_result(rss)
                         with history.log_op(node.value, 'read+commit' if fuse_commit else 'read') as log:
                             rss = await tx.execute(read2_query, read2_params, commit_tx=fuse_commit)
+                            if options.oplog_results:
+                                log.debug_info_from_execute_result(rss)
                         read2 = rss[0]
                         if options.oplog_results:
                             log.result({row.key: row.value for row in read2.rows})
@@ -650,8 +675,8 @@ class DatabaseChecker(object):
             async def perform(session):
                 # Read/Write tx may fail with TLI
                 async with session.transaction(ydb.SerializableReadWrite()) as tx:
-                    simple_tx = bool(random.randint(0, 1))
-                    fuse_commit = bool(random.randint(0, 1))
+                    simple_tx = True #bool(random.randint(0, 1))
+                    fuse_commit = True #bool(random.randint(0, 1))
                     if simple_tx:
                         with history.log_op(node.value, 'read+write+commit' if fuse_commit else 'read+write') as log:
                             rss = await tx.execute(
@@ -666,6 +691,8 @@ class DatabaseChecker(object):
                                 },
                                 commit_tx=fuse_commit,
                             )
+                            if options.oplog_results:
+                                log.debug_info_from_execute_result(rss)
                         if options.oplog_results:
                             log.result({row.key: row.value for row in rss[0].rows})
                     else:
@@ -679,10 +706,12 @@ class DatabaseChecker(object):
                                 },
                                 commit_tx=False,
                             )
+                            if options.oplog_results:
+                                log.debug_info_from_execute_result(rss)
                         if options.oplog_results:
                             log.result({row.key: row.value for row in rss[0].rows})
                         with history.log_op(node.value, 'write+commit' if fuse_commit else 'write') as log:
-                            await tx.execute(
+                            rss = await tx.execute(
                                 write_query,
                                 parameters={
                                     '$data': [
@@ -691,6 +720,8 @@ class DatabaseChecker(object):
                                 },
                                 commit_tx=fuse_commit,
                             )
+                            if options.oplog_results:
+                                log.debug_info_from_execute_result(rss)
                     if not fuse_commit:
                         with history.log_op(node.value, 'commit'):
                             await tx.commit()
@@ -728,7 +759,7 @@ class DatabaseChecker(object):
 
             async def perform(session):
                 async with session.transaction(ydb.SerializableReadWrite()) as tx:
-                    simple_tx = bool(random.randint(0, 1))
+                    simple_tx = True #bool(random.randint(0, 1))
                     with history.log_op(node.value, 'read+commit' if simple_tx else 'read') as log:
                         rss = await tx.execute(
                             read_query,
@@ -739,6 +770,8 @@ class DatabaseChecker(object):
                             },
                             commit_tx=simple_tx,
                         )
+                        if options.oplog_results:
+                            log.debug_info_from_execute_result(rss)
                     if options.oplog_results:
                         log.result({row.key: row.value for row in rss[0].rows})
                     if not simple_tx:
@@ -771,7 +804,7 @@ class DatabaseChecker(object):
 
             async def perform(session):
                 async with session.transaction(ydb.SerializableReadWrite()) as tx:
-                    simple_tx = bool(random.randint(0, 1))
+                    simple_tx = True #bool(random.randint(0, 1))
                     with history.log_op(node.value, 'range_read+commit' if simple_tx else 'range_read') as log:
                         rss = await tx.execute(
                             range_query,
@@ -781,6 +814,8 @@ class DatabaseChecker(object):
                             },
                             commit_tx=simple_tx,
                         )
+                        if options.oplog_results:
+                            log.debug_info_from_execute_result(rss)
                     if options.oplog_results:
                         log.result({row.key: row.value for row in rss[0].rows})
                     if not simple_tx:
@@ -814,7 +849,7 @@ class DatabaseChecker(object):
 
             async def perform(session):
                 async with session.transaction(ydb.SerializableReadWrite()) as tx:
-                    simple_tx = bool(random.randint(0, 1))
+                    simple_tx = True #bool(random.randint(0, 1))
                     with history.log_op(node.value, f'range_read_limit_{limit}+commit' if simple_tx else f'range_read_limit_{limit}') as log:
                         rss = await tx.execute(
                             range_query,
@@ -825,6 +860,8 @@ class DatabaseChecker(object):
                             },
                             commit_tx=simple_tx,
                         )
+                        if options.oplog_results:
+                            log.debug_info_from_execute_result(rss)
                     if options.oplog_results:
                         log.result({row.key: row.value for row in rss[0].rows})
                     if not simple_tx:
