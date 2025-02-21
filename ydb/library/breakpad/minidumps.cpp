@@ -2,15 +2,37 @@
 #include <contrib/libs/breakpad/src/client/linux/handler/exception_handler.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <link.h>
 
 
 class TMinidumper {
 public:
     TMinidumper() {
-        if(const char* path = getenv("BREAKPAD_MINIDUMPS_PATH")) {
+        if (const char* path = getenv("BREAKPAD_MINIDUMPS_PATH"); path && AllowEmbeddedHandler()) {
             using namespace google_breakpad;
             Handler = MakeHolder<ExceptionHandler>(MinidumpDescriptor(path), nullptr, DumpCallback, nullptr, true, -1, true);
         }
+    }
+
+private:
+    static bool AllowEmbeddedHandler() {
+        struct TIterateState {
+            bool Allow = true;
+        } iterateState;
+
+        dl_iterate_phdr(+[](struct dl_phdr_info* info, size_t size, void* data) -> int {
+            Y_UNUSED(size);
+            std::string_view name(info->dlpi_name);
+            if (name.ends_with("/libbreakpad_init.so")) {
+                // External breakpad handler is currently loaded
+                TIterateState* iterateState = (TIterateState*)data;
+                iterateState->Allow = false;
+                return 1;
+            }
+            return 0;
+        }, &iterateState);
+
+        return iterateState.Allow;
     }
 
 private:
