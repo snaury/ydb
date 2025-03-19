@@ -6176,6 +6176,83 @@ Y_UNIT_TEST_SUITE(DataShardSnapshots) {
         }
     }
 
+    Y_UNIT_TEST(StreamLookupWithSlowResolveAfterSplit) {
+        TPortManager pm;
+        TServerSettings serverSettings(pm.GetPort(2134));
+        serverSettings.SetDomainName("Root")
+            .SetUseRealThreads(false)
+            .SetDomainPlanResolution(100);
+
+        Tests::TServer::TPtr server = new TServer(serverSettings);
+        auto &runtime = *server->GetRuntime();
+        auto sender = runtime.AllocateEdgeActor();
+
+        runtime.SetLogPriority(NKikimrServices::TX_DATASHARD, NLog::PRI_TRACE);
+        runtime.SetLogPriority(NKikimrServices::KQP_COMPUTE, NLog::PRI_TRACE);
+
+        InitRoot(server, sender);
+
+        TDisableDataShardLogBatching disableDataShardLogBatching;
+
+        UNIT_ASSERT_VALUES_EQUAL(
+            KqpSchemeExec(runtime, R"(
+                CREATE TABLE `/Root/table` (key uint32, value uint32, PRIMARY KEY (key, value))
+                    WITH (PARTITION_AT_KEYS = (10));
+            )"),
+            "SUCCESS");
+
+        const auto shards = GetTableShards(server, sender, "/Root/table");
+        UNIT_ASSERT_VALUES_EQUAL(shards.size(), 2u);
+        const auto shard2actor = ResolveTablet(runtime, shards.at(1));
+
+        ExecSQL(server, sender, "UPSERT INTO `/Root/table` (key, value) VALUES (1, 2), (1, 3), (11, 4), (11, 5);");
+
+        TBlockEvents<TEvDataShard::TEvRead> blockedReads(runtime);
+
+        auto readFuture = KqpSimpleSend(runtime, R"(
+            $keys = AsList(<|key:cast(1 as uint32)|>, <|key:cast(11 as uint32)|>);
+
+            SELECT k.key, max(t.value)
+            FROM AS_TABLE($keys) AS k
+            INNER JOIN `/Root/table` AS t ON t.key = k.key
+            GROUP BY k.key
+            ORDER BY k.key;
+        )");
+
+        runtime.WaitFor("blocked reads", [&]{ return blockedReads.size() >= 2; });
+
+        bool foundRead = false;
+        for (size_t index = 0; index < blockedReads.size(); ++index) {
+            if (blockedReads[index]->GetRecipientRewrite() == shard2actor) {
+                if (index != 0) {
+                    std::swap(blockedReads[0], blockedReads[index]);
+                }
+                foundRead = true;
+            }
+        }
+        UNIT_ASSERT_C(foundRead, "Could not find TEvRead for shard " << shards.at(1) << " actor " << shard2actor);
+
+        // Split the second shard at key 20
+        Cerr << "... splitting shard" << shards.at(1) << Endl;
+        {
+            SetSplitMergePartCountLimit(server->GetRuntime(), -1);
+            auto senderSplit = runtime.AllocateEdgeActor();
+            ui64 txId = AsyncSplitTable(server, senderSplit, "/Root/table", shards.at(1), 20);
+            WaitTxNotification(server, senderSplit, txId);
+        }
+
+        TBlockEvents<TEvTxProxySchemeCache::TEvResolveKeySet> blockedResolve(runtime);
+
+        // Unblock the first request, it should reply with NOT_FOUND and cause a resolve attempt
+        blockedReads.Unblock(1);
+        runtime.WaitFor("blocked resolve", [&]{ return blockedResolve.size() >= 1; });
+
+        // Unblock the second request (which would reply normally) and wait a little
+        blockedReads.Unblock(1);
+        // Compute actor goes into an infinite loop
+        runtime.SimulateSleep(TDuration::MicroSeconds(1));
+    }
+
 }
 
 } // namespace NKikimr
