@@ -1,5 +1,6 @@
 #include "mon_events.h"
 #include "monitoring.h"
+#include "populator.h"
 
 #include <ydb/core/base/appdata.h>
 #include <ydb/core/scheme/scheme_pathid.h>
@@ -28,6 +29,8 @@
 #include <util/string/cast.h>
 #include <util/string/join.h>
 #include <util/string/split.h>
+
+#include <contrib/libs/protobuf/src/google/protobuf/json/json.h>
 
 // additional html elements
 namespace NMonitoring {
@@ -60,6 +63,8 @@ class TMonitoring: public TActorBootstrapped<TMonitoring> {
         Describe,
         Resolver,
         Resolve,
+        EmergencyPopulatorStart,
+        EmergencyPopulatorStop,
     };
 
     enum class EAttributeType {
@@ -133,6 +138,10 @@ class TMonitoring: public TActorBootstrapped<TMonitoring> {
             return ERequestType::Resolver;
         } else if (relPath.StartsWith("/resolve")) {
             return ERequestType::Resolve;
+        } else if (relPath.StartsWith("/emergency_populator_start")) {
+            return ERequestType::EmergencyPopulatorStart;
+        } else if (relPath.StartsWith("/emergency_populator_stop")) {
+            return ERequestType::EmergencyPopulatorStop;
         } else {
             return ERequestType::Unknown;
         }
@@ -168,6 +177,10 @@ class TMonitoring: public TActorBootstrapped<TMonitoring> {
             return str << "resolver";
         case ERequestType::Resolve:
             return str << "resolve";
+        case ERequestType::EmergencyPopulatorStart:
+            return str << "emergency_populator_start";
+        case ERequestType::EmergencyPopulatorStop:
+            return str << "emergency_populator_stop";
         case ERequestType::Unknown:
             return str;
         }
@@ -1299,12 +1312,113 @@ class TMonitoring: public TActorBootstrapped<TMonitoring> {
             }
             break;
 
+        case ERequestType::EmergencyPopulatorStart:
+            if (!EmergencyPopulator) {
+                EmergencyPopulator = Register(new TEmergencyPopulator);
+            }
+
+            ev->Rewrite(ev->GetTypeRewrite(), EmergencyPopulator);
+            TActivationContext::Send(ev.Release());
+            return;
+
+        case ERequestType::EmergencyPopulatorStop:
+            if (EmergencyPopulator) {
+                Send(EmergencyPopulator, new TEvents::TEvPoison);
+                EmergencyPopulator = {};
+                Send(ev->Sender, new NMon::TEvHttpInfoRes("Stopping"));
+                return;
+            }
+
+            Send(ev->Sender, new NMon::TEvHttpInfoRes("Not running"));
+            return;
+
         case ERequestType::Unknown:
             break;
         }
 
         Send(ev->Sender, new NMon::TEvHttpInfoRes(NMonitoring::HTTPNOTFOUND, 0, EContentType::Custom));
     }
+
+    class TEmergencyPopulator : public TActorBootstrapped<TEmergencyPopulator> {
+        static inline ui64 SchemeShardId = 72057594046678944;
+        static inline const char* FilePath = "/path/to/file.txt";
+
+    public:
+        void Bootstrap() {
+            Become(&TThis::StateWork);
+            Status = "Starting";
+
+            try {
+                Input.emplace(FilePath);
+            } catch (const std::exception& e) {
+                Status = e.what();
+                return;
+            }
+
+            NextChunk();
+        }
+
+        void NextChunk() {
+            try {
+                TString line;
+                while (Input->ReadLine(line)) {
+                    TTwoPartDescription desc;
+                    auto status = google::protobuf::json::JsonStringToMessage(line, &desc.Record);
+                    if (!status.ok()) {
+                        Status = status.ToString();
+                        return;
+                    }
+                    TPathId pathId(desc.Record.GetPathOwnerId(), desc.Record.GetPathId());
+                    if (pathId.OwnerId == SchemeShardId) {
+                        MaxPathId = Max(MaxPathId, pathId.LocalPathId);
+                        Descriptions.emplace_back(pathId, std::move(desc));
+                    }
+                    if (++TotalCount % 1000 == 0) {
+                        Status = TStringBuilder() << "Parsed " << TotalCount << " descriptions";
+                        Send(SelfId(), new TEvents::TEvWakeup);
+                        return;
+                    }
+                }
+            } catch (const std::exception& e) {
+                Status = e.what();
+                return;
+            }
+
+            Populator = Register(CreateSchemeBoardPopulator(
+                SchemeShardId, /* generation */ 1,
+                std::move(Descriptions),
+                MaxPathId));
+            Status = TStringBuilder() << "Parsed " << TotalCount << " descriptions and sent " << Descriptions.size() << " to populator";
+            Descriptions.clear();
+        }
+
+        void Stop() {
+            if (Populator) {
+                Send(Populator, new TEvents::TEvPoison);
+            }
+            PassAway();
+        }
+
+        void Handle(NMon::TEvHttpInfo::TPtr& ev) {
+            Send(ev->Sender, new NMon::TEvHttpInfoRes(Status));
+        }
+
+        STFUNC(StateWork) {
+            switch (ev->GetTypeRewrite()) {
+                hFunc(NMon::TEvHttpInfo, Handle);
+                sFunc(TEvents::TEvWakeup, NextChunk);
+                sFunc(TEvents::TEvPoison, Stop);
+            }
+        }
+
+    private:
+        TString Status;
+        std::optional<TFileInput> Input;
+        std::vector<std::pair<TPathId, NSchemeBoard::TTwoPartDescription>> Descriptions;
+        size_t TotalCount = 0;
+        ui64 MaxPathId = 0;
+        TActorId Populator;
+    };
 
 public:
     static constexpr auto ActorActivityType() {
@@ -1335,6 +1449,7 @@ public:
 private:
     THashMap<TActorId, TActorInfo> RegisteredActors;
     THashMap<EActivityType, THashSet<TActorId>> ByActivityType;
+    TActorId EmergencyPopulator;
 
 }; // TMonitoring
 
