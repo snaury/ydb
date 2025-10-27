@@ -2955,7 +2955,8 @@ public:
 
             if (Reader->NeedVolatileWaitForCommit() ||
                 Self->Pipeline.HasCommittingOpsBelow(state.ReadVersion) ||
-                Self->GetVolatileTxManager().HasUnstableVolatileTxsAtSnapshot(state.ReadVersion))
+                Self->GetVolatileTxManager().HasUnstableVolatileTxsAtSnapshot(state.ReadVersion) ||
+                txc.DB.HasChanges())
             {
                 DelayedResult = true;
             } else {
