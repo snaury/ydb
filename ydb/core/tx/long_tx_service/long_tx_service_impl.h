@@ -301,6 +301,7 @@ namespace NLongTxService {
                 hFunc(TEvInterconnect::TEvNodeDisconnected, Handle);
                 hFunc(TEvPrivate::TEvReconnect, Handle);
                 hFunc(TEvents::TEvUndelivered, Handle);
+                hFunc(TEvents::TEvWakeup, Handle);
             }
         }
 
@@ -343,6 +344,9 @@ namespace NLongTxService {
 
     private:
         void RemoveUnavailableLock(TProxyNodeState& node, TProxyLockState& lock);
+        void SendLockStatus(ui64 lockId, TLockState& lock, TEvLongTxService::TEvLockStatus::EStatus status, bool last = true);
+        void SendRandomLockUnavailable();
+        void Handle(TEvents::TEvWakeup::TPtr& ev);
 
     private:
         void StartCommitActor(TTransaction& tx);

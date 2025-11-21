@@ -22,10 +22,12 @@ static constexpr size_t MaxAcquireSnapshotInFlight = 4;
 static constexpr TDuration AcquireSnapshotBatchDelay = TDuration::MicroSeconds(100);
 static constexpr TDuration RemoteLockTimeout = TDuration::Seconds(15);
 static constexpr bool InterconnectUndeliveryBroken = true;
+static constexpr TDuration ChaosMonkeyLockUnavailablePeriod = TDuration::MicroSeconds(250);
 
 void TLongTxServiceActor::Bootstrap() {
     LogPrefix = TStringBuilder() << "TLongTxService [Node " << SelfId().NodeId() << "] ";
     RegisterLongTxServiceProbes();
+    Schedule(ChaosMonkeyLockUnavailablePeriod, new TEvents::TEvWakeup);
     Become(&TThis::StateWork);
 }
 
@@ -486,28 +488,7 @@ void TLongTxServiceActor::Handle(TEvLongTxService::TEvUnregisterLock::TPtr& ev) 
     auto& lock = it->second;
     Y_ABORT_UNLESS(lock.RefCount > 0);
     if (0 == --lock.RefCount) {
-        for (auto& pr : lock.LocalSubscribers) {
-            Send(pr.first,
-                new TEvLongTxService::TEvLockStatus(
-                    lockId, SelfId().NodeId(),
-                    NKikimrLongTxService::TEvLockStatus::STATUS_NOT_FOUND),
-                0, pr.second);
-        }
-        for (auto& prSession : lock.RemoteSubscribers) {
-            TActorId sessionId = prSession.first;
-            for (const auto& pr : prSession.second) {
-                SendViaSession(
-                    sessionId, pr.first,
-                    new TEvLongTxService::TEvLockStatus(
-                        lockId, SelfId().NodeId(),
-                        NKikimrLongTxService::TEvLockStatus::STATUS_NOT_FOUND),
-                    0, pr.second);
-            }
-            auto itSession = Sessions.find(sessionId);
-            if (itSession != Sessions.end()) {
-                itSession->second.SubscribedLocks.erase(lockId);
-            }
-        }
+        SendLockStatus(lockId, lock, NKikimrLongTxService::TEvLockStatus::STATUS_NOT_FOUND);
         Locks.erase(it);
     }
 }
@@ -1051,6 +1032,60 @@ void TLongTxServiceActor::RemoveUnavailableLock(TProxyNodeState& node, TProxyLoc
     }
 
     node.Locks.erase(lockId);
+}
+
+void TLongTxServiceActor::SendLockStatus(ui64 lockId, TLockState& lock, TEvLongTxService::TEvLockStatus::EStatus status, bool last) {
+    for (auto& pr : lock.LocalSubscribers) {
+        Send(pr.first,
+            new TEvLongTxService::TEvLockStatus(
+                lockId, SelfId().NodeId(), status),
+            0, pr.second);
+    }
+    if (last) {
+        lock.LocalSubscribers.clear();
+    }
+
+    for (auto& prSession : lock.RemoteSubscribers) {
+        TActorId sessionId = prSession.first;
+        for (const auto& pr : prSession.second) {
+            SendViaSession(
+                sessionId, pr.first,
+                new TEvLongTxService::TEvLockStatus(
+                    lockId, SelfId().NodeId(), status),
+                0, pr.second);
+        }
+        if (last) {
+            auto itSession = Sessions.find(sessionId);
+            if (itSession != Sessions.end()) {
+                itSession->second.SubscribedLocks.erase(lockId);
+            }
+        }
+    }
+    if (last) {
+        lock.RemoteSubscribers.clear();
+    }
+}
+
+void TLongTxServiceActor::SendRandomLockUnavailable() {
+    if (Locks.empty()) {
+        return;
+    }
+
+    ui64 index = RandomNumber<ui64>() % Locks.size();
+    for (auto& pr : Locks) {
+        if (0 == index--) {
+            // SendLockStatus(pr.first, pr.second, NKikimrLongTxService::TEvLockStatus::STATUS_UNAVAILABLE);
+            SendLockStatus(pr.first, pr.second, NKikimrLongTxService::TEvLockStatus::STATUS_NOT_FOUND);
+            const ui64 lockId = pr.first;
+            Locks.erase(lockId);
+            break;
+        }
+    }
+}
+
+void TLongTxServiceActor::Handle(TEvents::TEvWakeup::TPtr&) {
+    SendRandomLockUnavailable();
+    Schedule(ChaosMonkeyLockUnavailablePeriod, new TEvents::TEvWakeup);
 }
 
 } // namespace NLongTxService
