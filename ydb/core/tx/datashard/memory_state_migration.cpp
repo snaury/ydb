@@ -622,7 +622,8 @@ TDataShard::TPreservedInMemoryState TDataShard::PreserveInMemoryState() {
         InMemoryVarsFrozen = true;
     }
 
-    auto processLock = [&](TLockInfo& lockInfo) {
+    for (const auto& pr : SysLocks.GetLocks()) {
+        const auto& lockInfo = *pr.second;
         auto* protoLockInfo = state->AddLocks();
         protoLockInfo->SetLockId(lockInfo.GetLockId());
         protoLockInfo->SetLockNodeId(lockInfo.GetLockNodeId());
@@ -674,14 +675,6 @@ TDataShard::TPreservedInMemoryState TDataShard::PreserveInMemoryState() {
                 addedMessage(protoDep->ByteSizeLong());
             });
         maybeCheckpoint();
-    };
-
-    for (const auto& pr : SysLocks.GetLocks()) {
-        processLock(*pr.second);
-    }
-
-    for (const auto& pr : SysLocks.GetRemovedLocks()) {
-        processLock(*pr.second);
     }
 
     for (const auto& [txId, op] : TransQueue.GetTxsInFly()) {
