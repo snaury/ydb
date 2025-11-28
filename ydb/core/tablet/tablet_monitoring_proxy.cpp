@@ -14,6 +14,8 @@
 #include <library/cpp/monlib/service/pages/templates.h>
 #include <util/string/builder.h>
 
+#include <ydb/core/base/counters.h>
+
 ////////////////////////////////////////////
 namespace NKikimr { namespace NTabletMonitoringProxy {
 
@@ -240,6 +242,98 @@ static ui64 TryParseTabletId(TStringBuf tabletIdParam) {
     }
 }
 
+class TFakeProxyActor : public TActorBootstrapped<TFakeProxyActor> {
+public:
+    TFakeProxyActor(ui32 groupId, const TActorId& parent)
+        : GroupId(groupId)
+        , Parent(parent)
+    {}
+
+    void Bootstrap() {
+        TString name = Sprintf("%09" PRIu32, GroupId);
+        Group = GetServiceCounters(
+                AppData()->Counters, "dsproxy")->GetSubgroup("blobstorageproxy", name);
+        PercentileGroup = GetServiceCounters(
+                AppData()->Counters, "dsproxy_percentile")->GetSubgroup("blobstorageproxy", name);
+        OverviewGroup = GetServiceCounters(
+                AppData()->Counters, "dsproxy_overview");
+
+        NActors::TMon* mon = AppData()->Mon;
+        if (mon) {
+            NMonitoring::TIndexMonPage *actorsMonPage = mon->RegisterIndexPage("actors", "Actors");
+            NMonitoring::TIndexMonPage *proxiesMonPage = actorsMonPage->RegisterIndexPage(
+                    "blobstorageproxies", "BlobStorageProxies");
+
+            TString path = Sprintf("blobstorageproxy%09" PRIu32, (ui32)GroupId);
+            TString name = Sprintf("BlobStorageProxy%09" PRIu32, (ui32)GroupId);
+            mon->RegisterActorPage(TMon::TRegisterActorPageFields{
+                .Title = name,
+                .RelPath = path,
+                .ActorSystem = TActivationContext::ActorSystem(),
+                .Index = proxiesMonPage,
+                .PreTag = false,
+                .ActorId = SelfId(),
+                .MonServiceName = "dsproxy_mon"
+            });
+        }
+
+        Send(Parent, new TEvents::TEvWakeup);
+    }
+
+private:
+    const ui32 GroupId;
+    const TActorId Parent;
+    TIntrusivePtr<::NMonitoring::TDynamicCounters> Group;
+    TIntrusivePtr<::NMonitoring::TDynamicCounters> PercentileGroup;
+    TIntrusivePtr<::NMonitoring::TDynamicCounters> OverviewGroup;
+};
+
+static std::atomic<ui32> g_LastGroupId{ 3000000000 };
+
+class TFakeProxyCreator : public TActorBootstrapped<TFakeProxyCreator> {
+public:
+    TFakeProxyCreator(NMon::TEvHttpInfo::TPtr ev, ui32 count)
+        : Ev(ev)
+        , Count(count)
+    {}
+
+    void Bootstrap() {
+        ui32 groupId = g_LastGroupId.fetch_add(Count, std::memory_order_relaxed);
+
+        for (ui32 i = 0; i < Count; ++i) {
+            Register(new TFakeProxyActor(++groupId, SelfId()));
+        }
+
+        Become(&TThis::StateWork);
+        CheckFinished();
+    }
+
+    STFUNC(StateWork) {
+        switch (ev->GetTypeRewrite()) {
+            hFunc(TEvents::TEvWakeup, Handle);
+        }
+    }
+
+    void Handle(TEvents::TEvWakeup::TPtr&) {
+        ++Finished;
+        CheckFinished();
+    }
+
+    void CheckFinished() {
+        if (Finished == Count) {
+            TString result = TStringBuilder()
+                << "Created " << Count << " fake proxies";
+            Send(Ev->Sender, new NMon::TEvHttpInfoRes(result));
+            PassAway();
+        }
+    }
+
+private:
+    const NMon::TEvHttpInfo::TPtr Ev;
+    const ui32 Count;
+    ui32 Finished = 0;
+};
+
 ////////////////////////////////////////////
 void
 TTabletMonitoringProxyActor::Handle(NMon::TEvHttpInfo::TPtr &ev, const TActorContext &ctx) {
@@ -251,6 +345,14 @@ TTabletMonitoringProxyActor::Handle(NMon::TEvHttpInfo::TPtr &ev, const TActorCon
         cgi = &msg->Request.GetPostParams();
     } else {
         cgi = &msg->Request.GetParams();
+    }
+
+    if (cgi->Has("CreateFakeProxies")) {
+        const ui64 count = TryParseTabletId(cgi->Get("CreateFakeProxies"));
+        if (count > 0) {
+            Register(new TFakeProxyCreator(std::move(ev), count));
+            return;
+        }
     }
 
     // remove later
