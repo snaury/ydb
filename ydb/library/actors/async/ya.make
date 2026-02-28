@@ -25,6 +25,8 @@ SRCS(
     task_group.h
     timeout.cpp
     timeout.h
+    transfer.cpp
+    transfer.h
     wait_for_event.cpp
     wait_for_event.h
     yield.cpp

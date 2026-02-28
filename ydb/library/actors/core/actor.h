@@ -539,6 +539,8 @@ namespace NActors {
         class TActorAsyncHandlerPromise;
         template<class TEvent>
         class TActorSpecificEventAwaiter;
+        template<class T, class TActorType, class TCallback, class... TArgs>
+        class TAsyncActorTransferAwaiter;
     }
 
     class IActor
@@ -571,6 +573,8 @@ namespace NActors {
         friend class NDetail::TActorAsyncHandlerPromise;
         template<class TEvent>
         friend class NDetail::TActorSpecificEventAwaiter;
+        template<class T, class TActorType, class TCallback, class... TArgs>
+        friend class NDetail::TAsyncActorTransferAwaiter;
 
         TIntrusiveList<TActorTask> ActorTasks;
         absl::flat_hash_map<ui64, TIntrusiveList<TActorEventAwaiter>> EventAwaiters;
